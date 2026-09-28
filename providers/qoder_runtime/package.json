@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@qoder-ai/qoder-agent-sdk": "1.0.50"
+  }
+}
