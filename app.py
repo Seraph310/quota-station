@@ -1,4 +1,4 @@
-"""额度小站: a local, read-only Windows quota companion."""
+"""额度小站: a local, read-only desktop quota companion."""
 from __future__ import annotations
 
 import argparse
@@ -23,9 +23,11 @@ from PySide6.QtWidgets import (
 
 from source_picker import SourcePicker
 from page_turn import PageTurn
+from runtime_paths import data_root, native_source_keys, resource_root
+from version import __version__
 
-BASE = Path(__file__).resolve().parent
-STATE = BASE / 'state'
+BASE = resource_root()
+STATE = data_root() / 'state'
 NAMES = ['Codex', 'Qoder', 'WorkBuddy']
 COLORS = ['#458068', '#8170a7', '#ad7a44']
 PAPER, TEXT, MUTED, LINE, SOFT = '#fcfdfb', '#303532', '#687265', '#e3e8df', '#f0f3ee'
@@ -102,13 +104,14 @@ def setup_fonts(app):
         path = font_root / filename
         if path.is_file():
             QFontDatabase.addApplicationFont(str(path))
-    app.setFont(QFont('Microsoft YaHei', 9))
+    app.setFont(QFont('PingFang SC' if sys.platform == 'darwin' else 'Microsoft YaHei', 9))
 
 
-def icon():
-    pix = QPixmap(128, 128)
+def icon(size=128):
+    pix = QPixmap(size, size)
     pix.fill(Qt.GlobalColor.transparent)
     p = QPainter(pix)
+    p.scale(size / 128, size / 128)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(QColor(PAPER))
@@ -346,16 +349,17 @@ class Station(QWidget):
         settings = read_json(STATE / 'settings.json', {})
         if not isinstance(settings, dict):
             settings = {}
-        self.sources = {i: {'id': i, 'name': name, 'origin': '本机直连', 'color': COLORS[i],
+        native_keys = native_source_keys()
+        self.sources = {i: {'id': i, 'name': NAMES[i], 'origin': '本机直连', 'color': COLORS[i],
                             'account': '', 'plan': '', 'available': True}
-                        for i, name in enumerate(NAMES)}
+                        for i in native_keys}
         saved_sources = read_json(STATE / 'sources.json', [])
         for source in saved_sources if isinstance(saved_sources, list) else []:
             if isinstance(source, dict) and isinstance(source.get('id'), str) and source['id'].startswith('magpie:') and source.get('origin') == 'Magpie' and isinstance(source.get('name'), str):
                 self.sources[source['id']] = source
-        chosen = settings.get('visible_sources', [0, 1, 2])
+        chosen = settings.get('visible_sources', native_keys)
         self.visible_sources = []
-        for key in chosen if isinstance(chosen, list) else [0, 1, 2]:
+        for key in chosen if isinstance(chosen, list) else native_keys:
             if isinstance(key, (int, str)) and not isinstance(key, bool) and key in self.sources and key not in self.visible_sources:
                 self.visible_sources.append(key)
         self.active = 0  # Launch with the first selected source; collapse preserves selection.
@@ -924,6 +928,8 @@ class Station(QWidget):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--version', action='version', version=__version__)
+    parser.add_argument('--smoke-test', type=Path, help=argparse.SUPPRESS)
     parser.add_argument('--offline', action='store_true', help='Show cached data without querying providers')
     parser.add_argument('--expanded', action='store_true')
     parser.add_argument('--sources', action='store_true', help='Open the quota source selection page')
@@ -934,6 +940,9 @@ def main():
     app.setOrganizationName('QuotaStation')
     app.setQuitOnLastWindowClosed(False)
     setup_fonts(app)
+    if args.smoke_test:
+        from packaged_smoke import run
+        return run(app, args.smoke_test)
     # Match Windows' own double-click speed, including accessibility preferences.
     if os.name == 'nt':
         app.setDoubleClickInterval(ctypes.windll.user32.GetDoubleClickTime())

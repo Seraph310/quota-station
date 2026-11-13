@@ -58,6 +58,11 @@ class AppInteractionTests(unittest.TestCase):
         cls.qt.setDoubleClickInterval(cls.original_double_interval)
 
     def setUp(self):
+        # Interaction fixtures deliberately contain three synthetic native agents
+        # on every OS. Actual platform availability is checked separately.
+        native_patch = patch.object(quota_app, 'native_source_keys', return_value=[0, 1, 2])
+        native_patch.start()
+        self.addCleanup(native_patch.stop)
         self.temporary = tempfile.TemporaryDirectory(prefix=".app-test-", dir=Path(__file__).parent)
         self.addCleanup(self.temporary.cleanup)
         self.state_patch = patch.object(quota_app, "STATE", Path(self.temporary.name))

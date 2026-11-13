@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 
 
 def _executable(value):
@@ -13,7 +14,8 @@ def _executable(value):
         return None
     path = Path(os.path.expandvars(str(value).strip().strip('"'))).expanduser()
     try:
-        if path.is_absolute() and path.name.lower() == 'magpie.exe' and path.is_file():
+        expected = 'magpie.exe' if sys.platform == 'win32' else 'magpie'
+        if path.is_absolute() and path.name.lower() == expected and path.is_file() and (sys.platform == 'win32' or os.access(path, os.X_OK)):
             return str(path.absolute())
     except OSError:
         pass
@@ -21,6 +23,15 @@ def _executable(value):
 
 
 def _running_paths():
+    if sys.platform == 'darwin':
+        try:
+            result = subprocess.run(['/bin/ps', '-axo', 'comm='], capture_output=True, timeout=6)
+            if result.returncode or len(result.stdout) > 256 * 1024:
+                return []
+            return [line.strip() for line in result.stdout.decode('utf-8', errors='replace').splitlines()
+                    if Path(line.strip()).name == 'magpie']
+        except (OSError, subprocess.SubprocessError):
+            return []
     if os.name != 'nt':
         return []
     # A constant command, with no interpolated paths or account data. Only the
@@ -78,6 +89,11 @@ def _registry_paths():
 
 
 def _usual_paths():
+    if sys.platform != 'win32':
+        return [Path.home() / '.dsh/magpie/backend/current/magpie',
+                Path.home() / '.local/bin/magpie', Path('/opt/homebrew/bin/magpie'),
+                Path('/usr/local/bin/magpie'),
+                Path.home() / 'Library/Application Support/magpie/backend/current/magpie']
     candidates = [Path.home() / '.dsh/magpie/backend/current/magpie.exe']
     for variable, suffixes in (
         ('LOCALAPPDATA', ('magpie/magpie.exe', 'Programs/magpie/magpie.exe')),
@@ -96,7 +112,7 @@ def discover_executable(saved_path=None, *, rediscover=False):
     if override:
         path = _executable(override)
         if not path:
-            raise RuntimeError('QUOTA_MAGPIE_EXECUTABLE 未指向有效的 magpie.exe')
+            raise RuntimeError('QUOTA_MAGPIE_EXECUTABLE 未指向有效的 Magpie 程序')
         return path
     if not rediscover:
         path = _executable(saved_path)
@@ -106,7 +122,8 @@ def discover_executable(saved_path=None, *, rediscover=False):
         found = _executable(path)
         if found:
             return found
-    for path in (shutil.which('magpie.exe'), shutil.which('magpie')):
+    commands = ('magpie.exe', 'magpie') if sys.platform == 'win32' else ('magpie',)
+    for path in (shutil.which(command) for command in commands):
         found = _executable(path)
         if found:
             return found

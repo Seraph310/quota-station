@@ -13,11 +13,12 @@ import urllib.error
 import urllib.request
 
 from . import _workbuddy_windows as windows
+from runtime_paths import data_root
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LEGACY_CACHE = Path.home() / "WorkBuddy" / "wb-credits-ball" / "token.bin"
-PROJECT_CACHE = PROJECT_ROOT / ".cache" / "workbuddy-token.bin"
+PROJECT_CACHE = data_root() / ".cache" / "workbuddy-token.bin"
 WORKBUDDY_EXE = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))) / "Programs" / "WorkBuddy" / "WorkBuddy.exe"
 SUMMARY_URL = "https://copilot.tencent.com/billing/meter/get-user-resource-summary"
 MAX_RESPONSE_BYTES = 1024 * 1024

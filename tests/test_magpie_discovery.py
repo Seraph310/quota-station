@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import tempfile
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -13,11 +14,13 @@ class DiscoveryTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
-        self.old = self.root / 'old' / 'magpie.exe'
-        self.current = self.root / 'custom install' / 'magpie.exe'
+        filename = 'magpie.exe' if sys.platform == 'win32' else 'magpie'
+        self.old = self.root / 'old' / filename
+        self.current = self.root / 'custom install' / filename
         for path in (self.old, self.current):
             path.parent.mkdir()
             path.touch()
+            path.chmod(0o755)
         for target, value in (('_running_paths', []), ('_registry_paths', []), ('_usual_paths', [])):
             mocked = patch.object(discovery, target, return_value=value)
             mocked.start()

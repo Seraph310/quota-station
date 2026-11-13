@@ -13,6 +13,7 @@ from pathlib import Path
 import queue
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from typing import Any
@@ -118,9 +119,20 @@ def _find_executable() -> Path:
     configured = os.environ.get("QUOTA_CODEX_EXECUTABLE")
     if configured:
         candidate = Path(configured).expanduser()
-        if candidate.is_file() and candidate.suffix.lower() == ".exe":
+        if candidate.is_file() and (candidate.suffix.lower() == '.exe' if sys.platform == 'win32' else os.access(candidate, os.X_OK)):
             return candidate
         raise RuntimeError("配置的 Codex 程序不存在，请检查 QUOTA_CODEX_EXECUTABLE。")
+    if sys.platform != 'win32':
+        from runtime_paths import cli_environment
+        found = shutil.which('codex', path=cli_environment().get('PATH'))
+        candidates = ([Path(found)] if found else []) + [
+            Path('/Applications/Codex.app/Contents/Resources/codex'),
+            Path.home() / 'Applications/Codex.app/Contents/Resources/codex',
+        ]
+        for candidate in candidates:
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return candidate
+        raise RuntimeError('没有找到 Codex 命令行程序，请先安装 Codex CLI 并登录。')
     roots: list[Path] = []
     for command in ("codex.exe", "codex", "codex.cmd", "codex.ps1"):
         found = shutil.which(command)
@@ -176,7 +188,8 @@ def _read_account_limits(timeout: float) -> dict:
     command = [str(executable), "-c", "mcp_servers={}", "-c", "plugins={}",
                "-c", "features.plugins=false", "-c", "features.apps=false",
                "-c", "analytics.enabled=false", "app-server", "--stdio"]
-    environment = os.environ.copy()
+    from runtime_paths import cli_environment
+    environment = cli_environment()
     # Keep the CLI on the launching user's chosen profile. Some Windows hosts
     # run a child under a helper identity with a different native home folder.
     environment.setdefault("CODEX_HOME", str(Path.home() / ".codex"))

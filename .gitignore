@@ -10,6 +10,9 @@ tests/artifacts/
 tests/*_verification.json
 tmp/
 .release-tools/
+build/
+dist/
+release-artifacts/
 *.log
 *.part
 .env

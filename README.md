@@ -2,7 +2,7 @@
 
 **留一点余量，从容做事。**
 
-一个便签风格的 Windows 桌面小组件，把自己选中的 AI 额度放在手边。支持 **Codex、Qoder、WorkBuddy 本机直连**，也能读取 **Magpie 已接入的账号和 API 余额**。收起是一张小卡片或悬浮球，展开查看已选来源。
+一个便签风格的 Windows / macOS 桌面小组件，把自己选中的 AI 额度放在手边。Windows 支持 **Codex、Qoder、WorkBuddy 本机直连**；macOS 支持 **Codex CLI**。两端都能读取 **Magpie 已接入的账号和 API 余额**。收起是一张小卡片或悬浮球，展开查看已选来源。
 
 ![额度小站：小卡片、悬浮球与展开便签；数值为演示数据](docs/images/overview.png)
 
@@ -61,7 +61,17 @@
 
 ## 快速开始
 
-需要 **Windows 64 位、Python 3.11 或更新的兼容版本**。项目已在 Windows / Python 3.14 上验证。请先安装 Python，再下载仓库 ZIP 解压，或使用 Git：
+**直接使用：** 到 [GitHub Releases](https://github.com/Seraph310/quota-station/releases/latest) 下载对应系统的程序，无需安装 Python。
+
+| 系统 | 下载与启动 |
+| --- | --- |
+| Windows 10/11 x64 | 下载 Windows ZIP，完整解压后打开 `QuotaStation/QuotaStation.exe`；保留 `_internal` 文件夹 |
+| macOS · Apple 芯片 | 下载 arm64 DMG，把 `.app` 拖入 Applications |
+| macOS · Intel | 下载 x64 DMG，把 `.app` 拖入 Applications |
+
+Mac 下载版在 macOS 15 上构建和验证，尚未适配 Qoder、WorkBuddy 的原生登录读取。当前包未做商业代码签名，Mac 包未经 Apple 公证；首次打开说明和设置位置见 [下载版说明](docs/DOWNLOAD.md)。换电脑后需在新电脑登录相应客户端，或配置本机 Magpie。
+
+**从源码运行：** 需要 Python 3.11+。Windows 可使用以下安装脚本：
 
 ```powershell
 git clone https://github.com/Seraph310/quota-station.git
@@ -121,6 +131,7 @@ $env:QUOTA_CODEX_EXECUTABLE = 'C:\path\to\codex.exe'
 - 项目不设账号中转服务器，本机直连查询发往各平台自身的服务，Magpie 来源通过它的本机接口或 CLI 读取。登录凭证不写入明文日志。
 - Qoder 登录文件只读，不修改或刷新原凭证。WorkBuddy 如需新增缓存，使用 Windows 数据保护 API（DPAPI）加密，保存在项目 `.cache` 中；不修改原缓存或进程，不请求调试提权。
 - `state/` 存本地设置、显示来源、账号显示名称和余额快照；`.cache/`、虚拟环境、真实验证结果和本机截图均排除在 Git 之外。请勿把这些目录一起公开打包。
+- 以上相对路径适用于源码运行。下载版保存到 Windows `%LOCALAPPDATA%\QuotaStation` 或 macOS `~/Library/Application Support/QuotaStation`，更新或移动程序会保留设置。安装包不包含真实账号、余额缓存和凭证。
 - 本项目是个人实践作品。客户端兼容接口可能随版本变化；企业专属用量页、非标准服务域名和其他平台系统尚未全面适配。它不承诺跨电脑即装即用，数值以各平台自身页面为准。
 
 ## 开发与验证
@@ -133,6 +144,8 @@ $env:QUOTA_CODEX_EXECUTABLE = 'C:\path\to\codex.exe'
 ```
 
 自动化测试使用合成响应、模拟网络和离屏界面，不访问真实账号。`tools/render_demo.py` 生成可公开的演示图。开发用的 `verify_live.py`、`verify_qoder_app.py` 和 `render_check.py` 会读取当前用户的真实状态，输出已通过 `.gitignore` 排除，不用于公开展示。
+
+构建下载版：在目标系统安装 `requirements-build.txt`，运行 `python tools/build_release.py`。该脚本会测试实际打包后的程序，再生成 Windows ZIP 或 macOS DMG。产物在 `dist/release/`，隔离的启动验证图和报告在 `build/smoke/`。推送与 `version.py` 一致的 `v*` 标签会触发三平台构建并创建草稿 Release，核对后发布；手动运行 `Build desktop apps` 时可选择只构建，或在检查通过后创建草稿 Release。
 
 `tools/verify_magpie_sync.py` 可单独验证真实的同步按钮、自动检测、读取和设置保存；它使用隔离的临时小站状态，不改变正在运行的小站的显示选择。验证报告存放在已忽略的 `tests/magpie_sync_verification.json`。
 
