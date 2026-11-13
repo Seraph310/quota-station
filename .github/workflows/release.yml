@@ -83,7 +83,10 @@ jobs:
           cd release-artifacts
           sha256sum QuotaStation-*.zip QuotaStation-*.dmg > SHA256SUMS.txt
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft > ../release-is-draft.txt; then
-            test "$(cat ../release-is-draft.txt)" = 'true'
+            if [ "$(cat ../release-is-draft.txt)" != 'true' ]; then
+              echo 'Release is already published; keeping its verified assets unchanged.'
+              exit 0
+            fi
             gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "额度小站 $TAG" --notes-file ../docs/RELEASE.md
             gh release upload "$TAG" QuotaStation-*.zip QuotaStation-*.dmg SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
           else
