@@ -82,4 +82,10 @@ jobs:
           fi
           cd release-artifacts
           sha256sum QuotaStation-*.zip QuotaStation-*.dmg > SHA256SUMS.txt
-          gh release create "$TAG" QuotaStation-*.zip QuotaStation-*.dmg SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --title "额度小站 $TAG" --notes-file ../docs/RELEASE.md
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft > ../release-is-draft.txt; then
+            test "$(cat ../release-is-draft.txt)" = 'true'
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "额度小站 $TAG" --notes-file ../docs/RELEASE.md
+            gh release upload "$TAG" QuotaStation-*.zip QuotaStation-*.dmg SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" QuotaStation-*.zip QuotaStation-*.dmg SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --title "额度小站 $TAG" --notes-file ../docs/RELEASE.md
+          fi

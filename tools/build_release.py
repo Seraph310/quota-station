@@ -91,8 +91,18 @@ def main():
     for name in ('build', 'dist'):
         assert (ROOT / name).resolve().is_relative_to(ROOT)
     assets = prepare_assets()
-    run(sys.executable, '-m', 'PyInstaller', '--noconfirm', '--distpath', ROOT / 'dist',
-        '--workpath', ROOT / 'build/pyinstaller', ROOT / 'QuotaStation.spec', cwd=ROOT)
+    build_env = os.environ.copy()
+    build_env.pop('PYTHONHOME', None)
+    build_env.pop('PYTHONPATH', None)
+    build_env['PYINSTALLER_CONFIG_DIR'] = str(ROOT / 'build/pyinstaller-cache')
+    if sys.platform == 'win32':
+        # Do not collect unrelated same-name DLLs from developer tools on PATH
+        # (for example Poppler's incompatible icuuc.dll instead of Windows ICU).
+        system = Path(os.environ.get('SystemRoot', 'C:/Windows'))
+        build_env['PATH'] = os.pathsep.join(map(str, (Path(sys.executable).parent, Path(sys.base_prefix),
+                                                    system / 'System32', system)))
+    run(sys.executable, '-m', 'PyInstaller', '--clean', '--noconfirm', '--distpath', ROOT / 'dist',
+        '--workpath', ROOT / 'build/pyinstaller', ROOT / 'QuotaStation.spec', cwd=ROOT, env=build_env)
     mac = sys.platform == 'darwin'
     binary = ROOT / ('dist/Quota Station.app/Contents/MacOS/QuotaStation' if mac else 'dist/QuotaStation/QuotaStation.exe')
     evidence = ROOT / 'build/smoke'
