@@ -141,7 +141,7 @@ def normalize(payload, *, now=None):
             if display_unit != '%':
                 value = f'剩余 {balance:,.2f}'.rstrip('0').rstrip('.') + f' / {total:g} {display_unit}'
             if reset:
-                value += time.strftime(' · %m-%d %H:%M 重置', time.localtime(reset))
+                value += ' · ' + time.strftime('%m-%d %H:%M', time.localtime(reset)) + ' 重置'
             details.append({'label': _window_name(title), 'value': value})
             candidates.append((title, {'balance': round(balance, 8), 'unit': display_unit,
                 'subtitle': _window_name(title) + '剩余' if display_unit == '%' else '剩余 ' + display_unit,

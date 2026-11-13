@@ -608,7 +608,7 @@ class Station(QWidget):
                 right.setText('更新中…')
             elif item:
                 reset = item.get('reset_at')
-                right.setText(time.strftime('%m-%d %H:%M 重置', time.localtime(reset)) if reset else age_text(item.get('updated_at')))
+                right.setText(time.strftime('%m-%d %H:%M', time.localtime(reset)) + ' 重置' if reset else age_text(item.get('updated_at')))
             else:
                 right.setText('')
             percent = item.get('remaining_percent', item.get('balance') if item.get('unit') == '%' else None) if item else None

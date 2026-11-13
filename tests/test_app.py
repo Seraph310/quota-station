@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ctypes
 import json
+import locale
 import os
 from pathlib import Path
 import tempfile
@@ -379,6 +380,36 @@ class AppInteractionTests(unittest.TestCase):
         self.station.collapse()
         self.assertAlmostEqual(self.station.mini_scale, 1.5)
         self.assertEqual(self.station.active, 1)
+
+    def test_native_and_magpie_reset_dates_work_in_c_locale(self):
+        from providers.magpie_provider import normalize
+
+        previous_locale = locale.setlocale(locale.LC_ALL)
+        try:
+            # English Windows with Python 3.11 rejects Chinese strftime
+            # literals even when Python's UTF-8 mode is enabled.
+            locale.setlocale(locale.LC_ALL, 'C')
+            source = normalize([{
+                'provider': 'codex', 'name': 'Codex', 'kind': 'subscription',
+                'user': 'locale@example.test',
+                'windows': [{'name': '7 days', 'remaining': 72,
+                             'resetsAt': '2026-11-17T08:00:00Z'}],
+            }])[0]
+            native = snapshot(0, 72)
+            native['reset_at'] = source['snapshot']['reset_at']
+            self.station.receive(0, native, '')
+            self.station.receive_sources([source], '')
+            self.station.set_source_visible(source['id'], True)
+            self.station.expand()
+            for key in (0, source['id']):
+                row = self.station.rows[self.station.row_keys.index(key)]
+                self.assertRegex(row[3].text(), r'^\d{2}-\d{2} \d{2}:\d{2} 重置$')
+                self.assertEqual(self.station.snapshots[key]['balance'], 72)
+                self.assertNotIn(key, self.station.errors)
+            self.assertRegex(self.station.details_text(source['id']),
+                             r'剩余 72% · \d{2}-\d{2} \d{2}:\d{2} 重置')
+        finally:
+            locale.setlocale(locale.LC_ALL, previous_locale)
 
     def test_refresh_failure_keeps_last_value_then_accepts_actual_zero(self):
         old = snapshot(0, 72.0)
