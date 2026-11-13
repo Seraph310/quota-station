@@ -140,6 +140,14 @@ def _find_executable() -> Path:
             candidates = sorted(package.glob(pattern))
             if candidates:
                 return candidates[0]
+    # The desktop app can bundle a native CLI without adding it to Windows PATH.
+    # Discover its versioned directory so desktop shortcuts also work after updates.
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        app_bin = Path(local_app_data) / "OpenAI" / "Codex" / "bin"
+        candidates = [path for path in app_bin.glob("*/codex.exe") if path.is_file()]
+        if candidates:
+            return max(candidates, key=lambda path: path.stat().st_mtime_ns)
     raise RuntimeError("没有找到 Codex 命令行程序，请先安装 Codex CLI 并登录。")
 
 

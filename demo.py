@@ -8,6 +8,26 @@ import time
 
 from PySide6.QtWidgets import QApplication
 import app as station_app
+from providers.magpie_provider import normalize
+
+
+def demo_sources():
+    return normalize([
+        {'provider': 'codex', 'name': 'Codex', 'kind': 'subscription',
+         'user': 'celia@example.test', 'plan': 'Pro Lite',
+         'windows': [{'name': '7 days', 'remaining': 86}]},
+        {'provider': 'codearts', 'name': 'CodeArts', 'kind': 'subscription',
+         'user': 'demo-codearts', 'alias': '158****0000', 'plan': '体验版',
+         'windows': [{'name': '总积分', 'remaining': 80, 'limit': 5700, 'amount': 1140, 'unit': 'credits'}]},
+        {'provider': 'deepseek', 'name': 'DeepSeek', 'kind': 'balance', 'balance': '¥28.60'},
+        {'provider': 'kiro', 'name': 'Kiro', 'kind': 'subscription',
+         'user': 'personal@example.test', 'plan': 'Kiro Free',
+         'windows': [{'name': 'Credits', 'remaining': 64, 'limit': 50, 'amount': 18, 'unit': 'credits'}]},
+        {'provider': 'kiro', 'name': 'Kiro', 'kind': 'subscription',
+         'user': 'work@example.test', 'plan': 'Kiro Free',
+         'windows': [{'name': 'Credits', 'remaining': 100, 'limit': 50, 'unit': 'credits'}]},
+        {'provider': 'jiuzhan', 'name': 'Jiuzhan', 'kind': 'balance', 'balance': '$12.50'},
+    ])
 
 
 @contextmanager
@@ -34,7 +54,15 @@ def demo_state():
 class DemoStation(station_app.Station):
     def __init__(self):
         super().__init__(offline=True)
+        self.magpie_connection = {'executable': 'C:/Users/Demo/.dsh/magpie/backend/current/magpie.exe',
+                                  'port': 3425, 'version': '演示', 'transport': 'gateway',
+                                  'synced_at': time.time(), 'source_count': 6, 'readable_count': 6}
+        self.receive_sources(demo_sources(), '')
         self.setWindowTitle('额度小站 · 演示')
+
+    def show_sources(self):
+        super().show_sources()
+        self.source_picker.setWindowTitle('额度小站 · 显示来源（演示数据）')
 
     def render(self):
         super().render()
@@ -56,6 +84,8 @@ def main():
         station.show()
         if '--expanded' in sys.argv:
             station.expand()
+        if '--sources' in sys.argv:
+            station.show_sources()
         code = application.exec()
         station.poll.stop()
         station.clock.stop()

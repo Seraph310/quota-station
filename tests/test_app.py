@@ -121,6 +121,87 @@ class AppInteractionTests(unittest.TestCase):
         self.assertEqual(self.station.active, 1)
         self.assertFalse(self.station.expanded)
 
+    def test_card_left_and_right_clicks_turn_opposite_ways_and_wrap(self):
+        mini = self.station.mini
+        for x, expected, direction in ((mini.width() // 4, 2, -1), (mini.width() * 3 // 4, 0, 1)):
+            QTest.mouseClick(mini, LEFT, pos=QPoint(x, mini.height() // 2))
+            self.wait_for_click()
+            self.assertEqual(self.station.active, expected)
+            self.assertEqual(mini.page_turn.direction, direction)
+            self.assertTrue(mini.page_turn.isVisible())
+            self.assertFalse(mini.page_turn.before.isNull())
+            self.assertFalse(mini.page_turn.after.isNull())
+
+    def test_double_click_on_both_sides_expands_without_turning(self):
+        self.station.cycle(1)
+        mini = self.station.mini
+        for x in (mini.width() // 4, mini.width() * 3 // 4):
+            self.station.collapse()
+            position = QPoint(x, mini.height() // 2)
+            QTest.mouseClick(mini, LEFT, pos=position)
+            QTest.qWait(min(80, max(1, self.native_double_interval // 3)))
+            QTest.mouseDClick(mini, LEFT, pos=position)
+            QTest.mouseRelease(mini, LEFT, pos=position)
+            self.assertTrue(self.station.expanded)
+            self.assertEqual(self.station.active, 1)
+            self.assertFalse(mini.timer.isActive())
+            self.assertFalse(mini.page_turn.isVisible())
+
+    def test_opposite_click_at_interval_boundary_keeps_each_direction(self):
+        mini = self.station.mini
+        QTest.mouseClick(mini, LEFT, pos=QPoint(mini.width() // 4, mini.height() // 2))
+        QTest.qWait(self.native_double_interval + 5)
+        QTest.mouseClick(mini, LEFT, pos=QPoint(mini.width() * 3 // 4, mini.height() // 2))
+        self.wait_for_click()
+        self.assertEqual(self.station.active, 0)
+        self.assertEqual(mini.page_turn.direction, 1)
+
+    def test_page_turn_finishes_without_moving_and_reveals_newest_balance(self):
+        mini = self.station.mini
+        before_geometry = self.station.geometry()
+        self.station.receive(1, snapshot(1, 75), '')
+        self.station.cycle(1)
+        self.assertTrue(mini.page_turn.isVisible())
+        self.assertTrue(mini.page_turn.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents))
+        self.station.receive(1, snapshot(1, 0), '')
+        QTest.qWait(mini.page_turn.DURATION + 100)
+        self.assertFalse(mini.page_turn.isVisible())
+        self.assertIsNone(mini.page_turn.before)
+        self.assertEqual(self.station.geometry(), before_geometry)
+        self.assertEqual(mini.value.text(), '0')
+
+    def test_source_selection_and_resize_cancel_stale_turn_frames(self):
+        mini = self.station.mini
+        self.station.cycle(1)
+        self.assertTrue(mini.page_turn.isVisible())
+        self.station.set_source_visible(1, False)
+        self.assertFalse(mini.page_turn.isVisible())
+        self.assertEqual(self.station.active_key, 0)
+        self.station.cycle(1)
+        self.assertTrue(mini.page_turn.isVisible())
+        self.station.set_mini_scale(1.4)
+        self.assertFalse(mini.page_turn.isVisible())
+        self.assertEqual(self.station.active_key, 2)
+
+    def test_single_source_and_empty_selection_do_not_animate(self):
+        for key in (1, 2):
+            self.station.set_source_visible(key, False)
+        self.station.cycle(-1)
+        self.assertEqual(self.station.active_key, 0)
+        self.assertFalse(self.station.mini.page_turn.isVisible())
+        self.station.set_source_visible(0, False)
+        self.station.cycle(1)
+        self.assertIsNone(self.station.active_key)
+        self.assertFalse(self.station.mini.page_turn.isVisible())
+
+    def test_ball_keeps_forward_click_without_card_animation(self):
+        self.station.set_shape('ball')
+        mini = self.station.mini
+        QTest.mouseClick(mini, LEFT, pos=QPoint(mini.width() // 4, mini.height() // 2))
+        self.wait_for_click()
+        self.assertEqual(self.station.active, 1)
+        self.assertFalse(mini.page_turn.isVisible())
+
     def test_two_independent_clicks_keep_both_actions_at_interval_boundary(self):
         QTest.mouseClick(self.station.mini, LEFT)
         # Outside the OS double-click interval but near the extra 30 ms guard.
@@ -328,6 +409,168 @@ class AppInteractionTests(unittest.TestCase):
         for invalid in (None, False, float("nan"), -1.0):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 quota_app.validate_snapshot(snapshot(2, invalid))
+
+    def magpie_sources(self):
+        from providers.magpie_provider import normalize
+        return normalize([
+            {'provider': 'codex', 'name': 'Codex', 'kind': 'subscription', 'user': account,
+             'windows': [{'name': '7 days', 'remaining': amount}]}
+            for account, amount in [('one@example.test', 81), ('two@example.test', 24)]
+        ])
+
+    def test_selection_changes_card_cycle_and_expanded_rows_and_persists(self):
+        sources = self.magpie_sources()
+        self.station.receive_sources(sources, '')
+        first, second = [source['id'] for source in sources]
+        self.assertEqual(self.station.visible_sources, [0, 1, 2])
+        self.station.set_source_visible(0, False)
+        self.station.set_source_visible(2, False)
+        self.station.set_source_visible(second, True)
+        self.assertEqual(self.station.row_keys, [1, second])
+        self.station.cycle(1)
+        self.assertEqual(self.station.active_key, second)
+        self.assertEqual(self.station.mini.value.text(), '24%')
+        self.station.expand()
+        self.assertEqual(len(self.station.rows), 2)
+        self.assertEqual(self.station.rows[1][1].text(), '24%')
+        saved = json.loads((quota_app.STATE / 'settings.json').read_text('utf-8'))
+        self.assertEqual(saved['visible_sources'], [1, second])
+        restored = quota_app.Station(offline=True)
+        try:
+            self.assertEqual(restored.visible_sources, [1, second])
+            self.assertIn(first, restored.sources)
+            self.assertEqual(restored.snapshots[second]['balance'], 24)
+        finally:
+            restored.poll.stop()
+            restored.clock.stop()
+            restored.tray.hide()
+            restored.close()
+            restored.deleteLater()
+
+    def test_empty_selection_is_usable_and_survives_restart(self):
+        for key in [0, 1, 2]:
+            self.station.set_source_visible(key, False)
+        self.station.cycle(-1)
+        self.station.expand()
+        self.assertIsNone(self.station.active_key)
+        self.assertEqual(self.station.rows, [])
+        self.assertEqual(self.station.mini.unit.text(), '选择显示来源')
+        self.station.show_sources()
+        self.assertFalse(any(box.isChecked() for box in self.station.source_picker.checkboxes.values()))
+        self.station.source_picker.checkboxes[1].setChecked(True)
+        self.assertEqual(self.station.visible_sources, [1])
+        self.assertEqual(self.station.active_key, 1)
+        self.station.source_picker.close()
+
+    def test_magpie_refresh_does_not_reselect_or_switch_accounts(self):
+        sources = self.magpie_sources()
+        first, second = [source['id'] for source in sources]
+        self.station.receive_sources(sources, '')
+        self.station.set_source_visible(second, True)
+        self.station.cycle(3)
+        self.station.receive_sources(list(reversed(sources)), '')
+        self.assertEqual(self.station.active_key, second)
+        self.assertNotIn(first, self.station.visible_sources)
+        self.assertEqual(self.station.mini.value.text(), '24%')
+        self.station.receive_sources(None, 'Magpie 未连接')
+        self.assertEqual(self.station.mini.value.text(), '24%')
+        self.assertEqual(self.station.mini.unit.text(), '上次余额')
+        self.station.receive_sources([sources[0]], '')
+        self.assertIn(second, self.station.visible_sources)
+        self.assertFalse(self.station.sources[second]['available'])
+        self.assertIn(second, self.station.errors)
+        self.station.receive_sources(sources, '')
+        self.assertNotIn(second, self.station.errors)
+        self.assertEqual(self.station.active_key, second)
+
+    def test_picker_checkbox_applies_immediately_without_network_offline(self):
+        sources = self.magpie_sources()
+        self.station.receive_sources(sources, '')
+        self.station.show_sources()
+        picker = self.station.source_picker
+        key = sources[0]['id']
+        picker.checkboxes[key].setChecked(True)
+        picker.checkboxes[0].setChecked(False)
+        self.assertEqual(self.station.visible_sources, [1, 2, key])
+        self.assertEqual(picker.count.text(), '已选 3 项')
+        self.assertFalse(picker.refresh_button.isEnabled())
+        self.assertFalse(self.station.magpie_busy)
+        picker.close()
+        self.station.show_sources()
+        self.assertTrue(picker.checkboxes[key].isChecked())
+        self.assertFalse(picker.checkboxes[0].isChecked())
+        picker.close()
+
+    def test_disabled_native_sources_are_not_polled(self):
+        self.station.set_source_visible(0, False)
+        self.station.set_source_visible(2, False)
+        module = type('Provider', (), {'fetch': staticmethod(lambda: snapshot(1, 12))})()
+        class ImmediateThread:
+            def __init__(self, target, **kwargs):
+                self.target = target
+            def start(self):
+                self.target()
+        self.station.offline = False
+        try:
+            with patch.object(quota_app.importlib, 'import_module', return_value=module) as load, \
+                 patch.object(quota_app.threading, 'Thread', ImmediateThread):
+                self.station.refresh_native()
+                load.assert_called_once_with('providers.qoder_provider')
+        finally:
+            self.station.offline = True
+
+    def test_one_click_sync_saves_path_and_keeps_existing_checkbox_choices(self):
+        sources = self.magpie_sources()
+        self.station.receive_sources(sources, '')
+        self.station.set_source_visible(1, False)
+        self.station.set_source_visible(sources[1]['id'], True)
+        chosen = list(self.station.visible_sources)
+        connection = {'executable': 'D:/Apps/Magpie/magpie.exe', 'port': 4567,
+                      'version': '1.2.3', 'transport': 'gateway', 'synced_at': time.time(),
+                      'source_count': 2, 'readable_count': 2}
+        self.station.show_sources()
+        picker = self.station.source_picker
+        self.assertFalse(picker.connection_details.isVisible())
+        class ImmediateThread:
+            def __init__(self, target, **kwargs):
+                self.target = target
+            def start(self):
+                self.target()
+        self.station.offline = False
+        self.station.render()
+        try:
+            with patch('providers.magpie_provider.synchronize', return_value={'sources': sources, 'connection': connection}) as sync, \
+                 patch.object(quota_app.threading, 'Thread', ImmediateThread):
+                QTest.mouseClick(picker.refresh_button, LEFT)
+                sync.assert_called_once_with({})
+            self.assertEqual(self.station.visible_sources, chosen)
+            self.assertEqual(picker.status.text(), '已同步 2 个来源')
+            self.assertFalse(self.station.magpie_busy)
+            saved = json.loads((quota_app.STATE / 'settings.json').read_text('utf-8'))
+            self.assertEqual(saved['visible_sources'], chosen)
+            self.assertEqual(saved['magpie_connection'], connection)
+            QTest.mouseClick(picker.details_button, LEFT)
+            self.assertTrue(picker.connection_details.isVisible())
+            self.assertIn(connection['executable'], picker.connection_details.text())
+            self.assertIn('4567', picker.connection_details.text())
+        finally:
+            self.station.offline = True
+            picker.close()
+
+    def test_sync_failure_preserves_last_quota_and_exposes_detected_path(self):
+        sources = self.magpie_sources()
+        self.station.receive_sources(sources, '')
+        key = sources[0]['id']
+        old = dict(self.station.snapshots[key])
+        self.station.magpie_syncing = True
+        self.station.receive_sources({'connection': {'executable': 'D:/Apps/Magpie/magpie.exe'}}, '同步失败')
+        self.assertEqual(self.station.snapshots[key], old)
+        self.assertEqual(self.station.magpie_error, '同步失败')
+        self.assertEqual(self.station.magpie_sync_message, '')
+        self.station.show_sources()
+        self.assertIn('D:/Apps/Magpie/magpie.exe', self.station.source_picker.connection_details.text())
+        self.assertEqual(self.station.source_picker.status.text(), '同步失败')
+        self.station.source_picker.close()
 
     def test_render_synthetic_card_and_paper_in_memory(self):
         for index, balance in enumerate((72.0, 1280.0, 3560.0)):
