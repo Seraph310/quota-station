@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from source_picker import SourcePicker
 from page_turn import PageTurn
+from edge_dock import EdgeDock, nearest_screen
 from runtime_paths import data_root, native_source_keys, resource_root
 from version import __version__
 
@@ -173,6 +174,7 @@ class ResizeGrip(QWidget):
             self.mini.timer.stop()
             self.mini.page_turn.finish()
             self.mini.press_at = None
+            self.station.docking.detach_for_drag()
             self.start_at = event.globalPosition().toPoint()
             self.start_scale = self.station.mini_scale
             self.anchor = self.station.pos()
@@ -191,6 +193,7 @@ class ResizeGrip(QWidget):
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self.start_at is not None:
             self.start_at = None
+            self.station.docking._passive(False)
             self.station.clamp_position()
             self.station.save_settings()
         event.accept()
@@ -277,6 +280,7 @@ class MiniButton(QPushButton):
                 self.was_dragged = True
                 self.timer.stop()
             if self.was_dragged:
+                self.station.docking.detach_for_drag()
                 self.station.move(self.window_at + delta)
         event.accept()
 
@@ -286,8 +290,7 @@ class MiniButton(QPushButton):
         if self.double_release:
             self.double_release = False
         elif self.was_dragged:
-            self.station.clamp_position(snap=True)
-            self.station.save_settings()
+            self.station.docking.finish_drag(event.globalPosition().toPoint())
         elif self.press_at is not None:
             self.timer.start(QApplication.styleHints().mouseDoubleClickInterval() + 30)
         self.press_at = None
@@ -320,6 +323,7 @@ class Paper(QFrame):
         super().__init__()
         self.station = station
         self.press_at = None
+        self.was_dragged = False
         self.setObjectName('paper')
         self.setStyleSheet(f'QFrame#paper{{background:{PAPER};border:1px solid {LINE};border-radius:22px;}}')
         self.setFixedWidth(332)
@@ -328,17 +332,22 @@ class Paper(QFrame):
         if event.button() == Qt.MouseButton.LeftButton:
             self.press_at = event.globalPosition().toPoint()
             self.window_at = self.station.pos()
+            self.was_dragged = False
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
         if self.press_at is not None and event.buttons() & Qt.MouseButton.LeftButton:
-            self.station.move(self.window_at + event.globalPosition().toPoint() - self.press_at)
+            delta = event.globalPosition().toPoint() - self.press_at
+            if delta.manhattanLength() >= QApplication.startDragDistance():
+                self.was_dragged = True
+            if self.was_dragged:
+                self.station.move(self.window_at + delta)
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.press_at is not None and self.was_dragged:
+            self.station.docking.finish_drag(event.globalPosition().toPoint())
         self.press_at = None
-        self.station.clamp_position(snap=True)
-        self.station.save_settings()
         super().mouseReleaseEvent(event)
 
 
@@ -370,6 +379,8 @@ class Station(QWidget):
         self.topmost = settings.get('topmost', True)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.setAttribute(Qt.WidgetAttribute.WA_MacAlwaysShowToolWindow)
         self.setWindowTitle('额度小站')
         self.setWindowIcon(icon())
         self.setStyleSheet(f'QToolTip{{background:{PAPER};color:{TEXT};border:1px solid {LINE};padding:8px;}} QMenu{{background:{PAPER};color:{TEXT};padding:7px;border:1px solid {LINE};}} QMenu::item{{padding:7px 22px;}} QMenu::item:selected{{background:{SOFT};}}')
@@ -402,6 +413,7 @@ class Station(QWidget):
         self.paper = Paper(self)
         outer.addWidget(self.mini)
         outer.addWidget(self.paper)
+        self.docking = EdgeDock(self)
         for widget in (self.mini, self.paper):
             effect = QGraphicsDropShadowEffect(widget)
             effect.setBlurRadius(22)
@@ -417,6 +429,8 @@ class Station(QWidget):
         self.menu.addAction('显示来源…', self.show_sources)
         self.menu.addAction('立即刷新', self.refresh)
         self.menu.addAction('恢复小卡片默认大小', lambda: self.set_mini_scale(1.0, persist=True))
+        self.undock_action = self.menu.addAction('取消边缘吸附', self.docking.undock)
+        self.undock_action.setVisible(False)
         self.menu.addSeparator()
         self.top_action = self.menu.addAction('总在最前')
         self.top_action.setCheckable(True)
@@ -434,6 +448,7 @@ class Station(QWidget):
         self.clamp_position()
         if not self.topmost:
             self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, False)
+        self.docking.restore(settings.get('edge_dock'))
         self.poll = QTimer(self)
         self.poll.timeout.connect(self.refresh)
         self.poll.start(300_000)
@@ -631,8 +646,12 @@ class Station(QWidget):
         self.fit_rows()
         if self.source_picker:
             self.source_picker.sync()
+        self.docking.bar.sync()
+        self.write_runtime()
+
+    def write_runtime(self):
         try:
-            atomic_json(STATE / 'runtime.json', {'pid': os.getpid(), 'active': name, 'active_source': key, 'expanded': self.expanded, 'shape': self.shape, 'mini_scale': self.mini_scale, 'busy': sorted(self.busy), 'magpie_busy': self.magpie_busy, 'errors': self.errors, 'visible': self.isVisible(), 'geometry': [self.x(), self.y(), self.width(), self.height()]})
+            atomic_json(STATE / 'runtime.json', {'pid': os.getpid(), 'active': self.source_name(self.active_key), 'active_source': self.active_key, 'expanded': self.expanded, 'shape': self.shape, 'mini_scale': self.mini_scale, 'busy': sorted(self.busy), 'magpie_busy': self.magpie_busy, 'errors': self.errors, 'visible': self.isVisible(), 'geometry': [self.x(), self.y(), self.width(), self.height()], 'docked': self.docking.side, 'dock_peek': self.docking.peeked})
         except OSError:
             pass
 
@@ -825,6 +844,8 @@ class Station(QWidget):
             self.mini.page_turn.start(before, after, offset, round(29 * self.mini_scale))
 
     def expand(self):
+        if self.docking.side:
+            self.docking.undock()
         self.mini.timer.stop()
         self.mini.page_turn.finish()
         self.expanded = True
@@ -838,6 +859,9 @@ class Station(QWidget):
         self.close_button.setFocus()
 
     def collapse(self):
+        if self.docking.side:
+            self.docking.tuck()
+            return
         self.expanded = False
         self.paper.hide()
         self.mini.show()
@@ -866,7 +890,10 @@ class Station(QWidget):
             self.save_settings()
 
     def clamp_position(self, snap=False):
-        screen = QApplication.screenAt(self.frameGeometry().center()) or QApplication.primaryScreen()
+        if self.docking.side:
+            self.docking.place()
+            return
+        screen = nearest_screen(self.frameGeometry().center(), QApplication.screens())
         area = screen.availableGeometry()
         x = max(area.left(), min(self.x(), area.right() - self.width() + 1))
         y = max(area.top(), min(self.y(), area.bottom() - self.height() + 1))
@@ -879,7 +906,7 @@ class Station(QWidget):
 
     def save_settings(self):
         try:
-            atomic_json(STATE / 'settings.json', {'shape': self.shape, 'mini_scale': self.mini_scale, 'topmost': self.topmost, 'x': self.x(), 'y': self.y(), 'visible_sources': self.visible_sources, 'magpie_connection': self.magpie_connection})
+            atomic_json(STATE / 'settings.json', {'shape': self.shape, 'mini_scale': self.mini_scale, 'topmost': self.topmost, 'x': self.x(), 'y': self.y(), 'visible_sources': self.visible_sources, 'magpie_connection': self.magpie_connection, 'edge_dock': self.docking.settings()})
             return True
         except OSError:
             return False
@@ -887,6 +914,10 @@ class Station(QWidget):
     def reveal(self):
         self.clamp_position()
         self.show()
+        if self.docking.side:
+            self.docking.peek()
+            self.docking.hide_timer.start(2000)
+            return
         self.raise_()
         self.activateWindow()
 
@@ -908,6 +939,23 @@ class Station(QWidget):
     def contextMenuEvent(self, event):
         self.mini.timer.stop()
         self.menu.popup(event.globalPos())
+
+    def enterEvent(self, event):
+        self.docking.enter()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.docking.leave()
+        super().leaveEvent(event)
+
+    def hideEvent(self, event):
+        self.docking.suspend()
+        super().hideEvent(event)
+        self.write_runtime()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.write_runtime()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:

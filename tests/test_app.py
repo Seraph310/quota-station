@@ -272,6 +272,191 @@ class AppInteractionTests(unittest.TestCase):
         self.assertEqual(self.station.active, 0)
         self.assertFalse(self.station.expanded)
 
+    def drag_widget_to(self, widget, destination):
+        start = widget.rect().center()
+        QTest.mousePress(widget, LEFT, pos=start)
+        event = QMouseEvent(
+            QEvent.Type.MouseMove, QPointF(widget.mapFromGlobal(destination)), QPointF(destination),
+            Qt.MouseButton.NoButton, LEFT, Qt.KeyboardModifier.NoModifier,
+        )
+        QApplication.sendEvent(widget, event)
+        QTest.mouseRelease(widget, LEFT, pos=widget.mapFromGlobal(destination))
+        self.qt.processEvents()
+
+    def test_drag_beyond_either_edge_parks_in_a_twelve_pixel_bar(self):
+        area = self.qt.primaryScreen().geometry()
+        for side, x in (('left', area.left()), ('right', area.right())):
+            with self.subTest(side=side):
+                self.station.docking.undock()
+                self.station.move(area.center())
+                self.drag_widget_to(self.station.mini, QPoint(x, area.center().y()))
+                self.assertEqual(self.station.docking.side, side)
+                self.assertFalse(self.station.docking.peeked)
+                self.assertEqual(self.station.width(), 12)
+                self.assertEqual(self.station.height(), 64)
+                self.assertTrue(self.station.docking.bar.isVisible())
+                self.assertFalse(self.station.mini.isVisible())
+                self.assertFalse(self.station.mini.timer.isActive())
+                self.assertFalse(self.station.docking.hover_timer.isActive())
+                self.assertEqual(self.station.active, 0)
+                self.assertTrue(area.contains(self.station.geometry()))
+
+    def test_touching_edge_or_resizing_near_edge_does_not_dock(self):
+        area = self.qt.primaryScreen().geometry()
+        self.station.move(area.center())
+        self.drag_widget_to(self.station.mini, QPoint(area.left() + self.station.mini.width() // 2,
+                                                     area.center().y()))
+        self.assertIsNone(self.station.docking.side)
+        self.station.move(area.right() - self.station.width() + 1, area.center().y())
+        self.drag_resize_grip(QPoint(60, 50))
+        self.assertIsNone(self.station.docking.side)
+        self.assertTrue(area.contains(self.station.geometry()))
+
+    def test_hover_waits_then_peeks_without_activation_and_leaving_tucks(self):
+        dock = self.station.docking
+        dock.dock('left', self.qt.primaryScreen())
+        dock.leave()  # Arm after the original drag release.
+        with patch('edge_dock.QCursor.pos', return_value=self.station.geometry().center()), \
+                patch.object(self.station, 'activateWindow') as activate, \
+                patch.object(self.station, 'raise_') as raise_window:
+            dock.enter()
+            QTest.qWait(dock.HOVER_DELAY // 2)
+            self.assertFalse(dock.peeked)
+            QTest.qWait(dock.HOVER_DELAY)
+            self.assertTrue(dock.peeked)
+            self.assertTrue(self.station.mini.isVisible())
+            self.assertTrue(self.station.windowFlags() & Qt.WindowType.WindowDoesNotAcceptFocus)
+            self.assertTrue(self.station.testAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating))
+            activate.assert_not_called()
+            raise_window.assert_not_called()
+        with patch('edge_dock.QCursor.pos', return_value=QPoint(20000, 20000)):
+            dock.leave()
+            QTest.qWait(dock.HIDE_DELAY // 2)
+            self.assertTrue(dock.peeked)
+            QTest.qWait(dock.HIDE_DELAY)
+            self.assertFalse(dock.peeked)
+            self.assertEqual(self.station.width(), 12)
+
+    def test_passing_bar_quickly_does_not_open_it(self):
+        dock = self.station.docking
+        dock.dock('right', self.qt.primaryScreen())
+        dock.leave()
+        dock.enter()
+        QTest.qWait(80)
+        dock.leave()
+        QTest.qWait(dock.HOVER_DELAY + 30)
+        self.assertFalse(dock.peeked)
+        self.assertEqual(self.station.width(), 12)
+
+    def test_bar_drag_repositions_or_detaches_without_switching_source(self):
+        dock = self.station.docking
+        self.station.cycle(1)
+        dock.dock('left', self.qt.primaryScreen(), center_y=250)
+        before_y = self.station.y()
+        self.drag_widget_to(dock.bar, self.station.geometry().center() + QPoint(0, 70))
+        self.assertEqual(dock.side, 'left')
+        self.assertEqual(self.station.y(), before_y + 70)
+        self.drag_widget_to(dock.bar, self.station.geometry().center() + QPoint(220, 20))
+        self.assertIsNone(dock.side)
+        self.assertTrue(self.station.mini.isVisible())
+        self.assertFalse(self.station.windowFlags() & Qt.WindowType.WindowDoesNotAcceptFocus)
+        self.wait_for_click()
+        self.assertEqual(self.station.active, 1)
+
+    def test_dragging_hover_card_back_detaches_and_double_click_still_expands(self):
+        dock = self.station.docking
+        dock.dock('right', self.qt.primaryScreen())
+        dock.peek()
+        self.drag_widget_to(self.station.mini, self.qt.primaryScreen().geometry().center())
+        self.assertIsNone(dock.side)
+        self.assertFalse(self.station.windowFlags() & Qt.WindowType.WindowDoesNotAcceptFocus)
+        dock.dock('left', self.qt.primaryScreen())
+        dock.peek()
+        self.double_click(60)
+        self.assertTrue(self.station.expanded)
+        self.assertIsNone(dock.side)
+        self.assertEqual(self.station.active, 0)
+
+    def test_refresh_and_scale_changes_keep_bar_small_and_pinned(self):
+        dock = self.station.docking
+        dock.dock('right', self.qt.primaryScreen())
+        before = self.station.geometry()
+        self.station.receive(0, snapshot(0, 55), '')
+        self.station.set_mini_scale(1.8)
+        self.station.set_shape('ball')
+        self.station.render()
+        self.qt.processEvents()
+        self.assertEqual(self.station.geometry(), before)
+        dock.peek()
+        self.assertEqual(self.station.mini.value.text(), '55%')
+        self.assertEqual(self.station.shape, 'ball')
+        self.assertAlmostEqual(self.station.mini.width(), 124 * 1.8, delta=1)
+        self.station.collapse()
+        self.assertFalse(dock.peeked)
+        self.assertEqual(self.station.width(), 12)
+
+    def test_docked_position_restores_collapsed_even_if_saved_while_peeking(self):
+        dock = self.station.docking
+        self.station.set_mini_scale(1.3)
+        dock.dock('right', self.qt.primaryScreen(), center_y=300)
+        dock.peek()
+        self.station.save_settings()
+        restored = quota_app.Station(offline=True)
+        try:
+            restored.poll.stop()
+            restored.clock.stop()
+            restored.show()
+            self.qt.processEvents()
+            self.assertEqual(restored.docking.side, 'right')
+            self.assertFalse(restored.docking.peeked)
+            self.assertEqual(restored.docking.center_y, 300)
+            self.assertEqual(restored.width(), 12)
+            self.assertEqual(restored.mini_scale, 1.3)
+        finally:
+            restored.tray.hide()
+            restored.close()
+            restored.deleteLater()
+
+    def test_hidden_dock_cannot_reopen_from_pending_hover(self):
+        dock = self.station.docking
+        dock.dock('left', self.qt.primaryScreen())
+        dock.leave()
+        dock.enter()
+        self.station.hide()
+        QTest.qWait(dock.HOVER_DELAY + 30)
+        dock.peek()
+        self.assertFalse(self.station.isVisible())
+        self.assertFalse(dock.peeked)
+        self.station.reveal()
+        self.assertTrue(self.station.isVisible())
+        self.assertTrue(dock.peeked)
+
+    def test_popup_and_page_turn_finish_before_hover_card_hides(self):
+        dock = self.station.docking
+        dock.dock('left', self.qt.primaryScreen())
+        dock.peek()
+        with patch('edge_dock.QCursor.pos', return_value=QPoint(20000, 20000)):
+            with patch.object(QApplication, 'activePopupWidget', return_value=self.station.menu):
+                dock._hide_timeout()
+                self.assertTrue(dock.peeked)
+            self.station.cycle(1)
+            dock._hide_timeout()
+            self.assertTrue(dock.peeked)
+            self.station.mini.page_turn.finish()
+            dock._hide_timeout()
+            self.assertFalse(dock.peeked)
+
+    def test_removed_screen_and_invalid_saved_dock_recover_on_screen(self):
+        dock = self.station.docking
+        dock.restore({'side': 'right', 'screen': 'removed-display', 'center_y': 99999})
+        self.assertTrue(self.qt.primaryScreen().geometry().contains(self.station.geometry()))
+        self.assertEqual(dock.screen_name, self.qt.primaryScreen().name())
+        dock.undock()
+        for saved in ([], {'side': 'top', 'center_y': 100}, {'side': 'left', 'center_y': 'bad'},
+                      {'side': 'right', 'center_y': float('nan')}):
+            dock.restore(saved)
+            self.assertIsNone(dock.side)
+
     def test_keyboard_switch_expand_and_escape_preserve_platform(self):
         mini = self.station.mini
         QTest.keyClick(mini, Qt.Key.Key_Left)

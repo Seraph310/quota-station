@@ -10,6 +10,8 @@ macOS：Apple 芯片选 arm64，Intel 选 x64。打开 DMG，把 Quota Station.a
 
 双击卡片展开，点击“显示来源”勾选账号；“一键同步 Magpie”读取这台电脑已有的 Magpie 来源。左侧上一页、右侧下一页，拖右下折角调整大小。
 
+拖过屏幕左、右边缘后松手，可收成显示剩余额度的窄条。悬停展开，移开收回；沿边缘上下拖动可调整位置，向屏幕内拖动恢复卡片。右键菜单也可取消吸附。
+
 设置、显示选择和缓存保存在当前用户目录，更新程序会保留它们：
 - Windows：%LOCALAPPDATA%\QuotaStation
 - macOS：~/Library/Application Support/QuotaStation

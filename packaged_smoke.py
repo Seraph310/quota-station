@@ -38,6 +38,17 @@ def run(application, destination):
             application.processEvents()
             assert station.grab().save(str(destination / 'page-turn.png'))
             turn.finish()
+            for side in ('left', 'right'):
+                station.docking.dock(side, application.primaryScreen())
+                application.processEvents()
+                assert station.width() == 12 and station.height() == 64
+                assert station.grab().save(str(destination / f'dock-{side}.png'))
+                station.docking.peek()
+                application.processEvents()
+                assert station.mini.isVisible() and station.docking.peeked
+                assert station.grab().save(str(destination / f'dock-{side}-peek.png'))
+                station.docking.tuck()
+            station.docking.undock()
             station.expand()
             application.processEvents()
             assert station.grab().save(str(destination / 'expanded.png'))
@@ -47,7 +58,8 @@ def run(application, destination):
             report = {'success': True, 'version': __version__, 'frozen': bool(getattr(sys, 'frozen', False)),
                       'platform': sys.platform, 'architecture': platform.machine(),
                       'native_sources': station_app.native_source_keys(), 'state_isolated': True,
-                      'provider_imports': modules, 'visible_sources': len(station.visible_sources)}
+                      'provider_imports': modules, 'visible_sources': len(station.visible_sources),
+                      'edge_docking': ['left', 'right']}
         finally:
             if station.source_picker:
                 station.source_picker.close()

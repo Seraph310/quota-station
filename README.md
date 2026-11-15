@@ -25,6 +25,8 @@
 | 双击 | 展开已选额度，来源较多时可滚动 |
 | 显示来源 | 勾选本机直连或 Magpie 的账号，立即生效并自动保存 |
 | 拖动主体 | 调整桌面位置 |
+| 拖过屏幕左 / 右边缘后松手 | 吸附成 12 像素窄条；悬停查看，移开自动收回 |
+| 拖动侧边条 | 上下调整位置，向屏幕内拖回小卡片 |
 | 拖动右下角书页折角 | 小卡片等比例缩放，范围 80%–200% |
 | 便签右上角 / Esc | 收起并保留当前选择 |
 | 右键 / F5 | 刷新、置顶、隐藏到托盘或退出 |
@@ -37,6 +39,8 @@
 - Codex 显示优先选择的周额度剩余百分比；Qoder 显示可用 Credits 合计；WorkBuddy 显示剩余积分。
 
 ![小卡片卷角翻页，虚构演示数据](docs/images/page-turn-fold.gif)
+
+侧边条显示当前来源的剩余百分比，填色从底部向上表示剩余量；只有余额的来源显示简短金额或积分，没有数据时显示“—”。悬停 0.35 秒展开卡片，移开 0.6 秒后收回；展开查看不会抢走当前窗口的输入焦点。卡片仍可点击翻页，双击展开全部额度会解除吸附。右键菜单也可选择“取消边缘吸附”。吸附位置会自动保存，跨显示器接缝拖动不会触发收起。
 
 ## 选择显示来源
 
@@ -145,6 +149,8 @@ $env:QUOTA_CODEX_EXECUTABLE = 'C:\path\to\codex.exe'
 
 自动化测试使用合成响应、模拟网络和离屏界面，不访问真实账号。`tools/render_demo.py` 生成可公开的演示图。开发用的 `verify_live.py`、`verify_qoder_app.py` 和 `render_check.py` 会读取当前用户的真实状态，输出已通过 `.gitignore` 排除，不用于公开展示。
 
+Windows 可运行 `python tools/verify_edge_dock.py` 检查原生窗口：短暂显示演示侧边条和卡片，核对窗口尺寸、系统不激活标志及前台焦点，报告在 `tests/artifacts/edge-dock-native/`。它不读取真实账号、不移动鼠标或发送桌面输入。
+
 构建下载版：在目标系统安装 `requirements-build.txt`，运行 `python tools/build_release.py`。该脚本会测试实际打包后的程序，再生成 Windows ZIP 或 macOS DMG。产物在 `dist/release/`，隔离的启动验证图和报告在 `build/smoke/`。推送与 `version.py` 一致的 `v*` 标签会触发三平台构建并创建草稿 Release，核对后发布；手动运行 `Build desktop apps` 时可选择只构建，或在检查通过后创建草稿 Release。
 
 `tools/verify_magpie_sync.py` 可单独验证真实的同步按钮、自动检测、读取和设置保存；它使用隔离的临时小站状态，不改变正在运行的小站的显示选择。验证报告存放在已忽略的 `tests/magpie_sync_verification.json`。
@@ -155,6 +161,7 @@ $env:QUOTA_CODEX_EXECUTABLE = 'C:\path\to\codex.exe'
 | `providers/` | 本机平台与 Magpie 的额度适配器 |
 | `source_picker.py` | 显示来源选择页 |
 | `page_turn.py` | 小卡片的双向翻页动画 |
+| `edge_dock.py` | 屏幕边缘吸附、窄条与悬停展开 |
 | `install.ps1` / `setup_desktop.ps1` | 安装依赖 / 创建快捷方式 |
 | `tests/` | 额度解析、账号边界和界面交互测试 |
 | `docs/` / `output/pdf/` | 图文案例、演示图和可提交的 PDF |
