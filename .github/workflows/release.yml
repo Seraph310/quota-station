@@ -79,6 +79,8 @@ jobs:
           if [ -z "$TAG" ]; then TAG="v$(python -c 'from version import __version__; print(__version__)')"; fi
           if git rev-parse --verify "$TAG^{commit}" >/dev/null 2>&1; then
             test "$(git rev-parse "$TAG^{commit}")" = "$GITHUB_SHA"
+          else
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" -X POST -f "ref=refs/tags/$TAG" -f "sha=$GITHUB_SHA"
           fi
           cd release-artifacts
           sha256sum QuotaStation-*.zip QuotaStation-*.dmg > SHA256SUMS.txt

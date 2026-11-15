@@ -56,15 +56,16 @@ def prepare_assets():
     licenses = assets / 'licenses'
     licenses.mkdir(exist_ok=True)
     (licenses / 'THIRD_PARTY_NOTICES.txt').write_text(
-        'Quota Station bundles Python, PySide6/Qt, shiboken6, cryptography and their runtime dependencies.\n'
+        'Quota Station bundles Python, PySide6/Qt, shiboken6, cryptography, certifi and their runtime dependencies.\n'
         'Python: https://www.python.org/psf/license/\n'
         'PySide6/Qt: https://doc.qt.io/qtforpython-6/licenses.html\n'
         'PySide6/Qt source and LGPL information: https://code.qt.io/ and https://www.qt.io/licensing/open-source-lgpl-obligations\n'
         'cryptography: https://github.com/pyca/cryptography\n'
+        'certifi (MPL-2.0): https://github.com/certifi/python-certifi\n'
         'PyInstaller bootloader exception: https://pyinstaller.org/en/stable/license.html\n'
         'Libraries are dynamically loaded from the distributed app folder; replacement libraries must be ABI-compatible.\n',
         encoding='utf-8')
-    for name in ('PySide6', 'PySide6_Essentials', 'PySide6_Addons', 'shiboken6', 'cryptography', 'pyinstaller'):
+    for name in ('PySide6', 'PySide6_Essentials', 'PySide6_Addons', 'shiboken6', 'cryptography', 'certifi', 'pyinstaller'):
         distribution = importlib.metadata.distribution(name)
         for relative in distribution.files or []:
             if '..' in relative.parts:
@@ -115,6 +116,8 @@ def main():
     assert report['success'] and report['frozen'] and report['state_isolated']
     assert report['version'] == __version__
     assert report['native_sources'] == ([0] if mac else [0, 1, 2])
+    run(sys.executable, ROOT / 'tools/verify_updater_install.py', '--binary', binary,
+        '--output', evidence / 'updater.json', timeout=240)
     arch = platform.machine().lower()
     arch = 'arm64' if arch in ('arm64', 'aarch64') else 'x64'
     destination = ROOT / 'dist/release'

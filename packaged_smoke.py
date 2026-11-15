@@ -55,6 +55,14 @@ def run(application, destination):
             station.show_sources()
             application.processEvents()
             assert station.source_picker.grab().save(str(destination / 'sources.png'))
+            from updater_ui import UpdateDialog
+            station.updater.release = {'version': '99.0.0', 'newer': True, 'notes': '演示更新内容'}
+            station.updater.state, station.updater.message = 'available', '新版本  v99.0.0'
+            station.updater.dialog = UpdateDialog(station.updater)
+            station.updater.dialog.show()
+            application.processEvents()
+            assert station.updater.dialog.action.text() in ('一键升级', '安装桌面版')
+            assert station.updater.dialog.grab().save(str(destination / 'updates.png'))
             report = {'success': True, 'version': __version__, 'frozen': bool(getattr(sys, 'frozen', False)),
                       'platform': sys.platform, 'architecture': platform.machine(),
                       'native_sources': station_app.native_source_keys(), 'state_isolated': True,
@@ -63,6 +71,8 @@ def run(application, destination):
         finally:
             if station.source_picker:
                 station.source_picker.close()
+            if station.updater.dialog:
+                station.updater.dialog.close()
             station.poll.stop()
             station.clock.stop()
             station.tray.hide()

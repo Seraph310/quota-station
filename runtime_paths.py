@@ -11,14 +11,18 @@ def resource_root():
 
 
 def data_root():
+    if not getattr(sys, 'frozen', False) and not os.environ.get('QUOTA_STATION_DATA_DIR'):
+        return resource_root()
+    return user_data_root()
+
+
+def user_data_root():
     override = os.environ.get('QUOTA_STATION_DATA_DIR')
     if override:
         path = Path(override).expanduser()
         if not path.is_absolute():
             raise ValueError('QUOTA_STATION_DATA_DIR must be an absolute path')
         return path
-    if not getattr(sys, 'frozen', False):
-        return resource_root()
     if sys.platform == 'win32':
         return Path(os.environ.get('LOCALAPPDATA') or Path.home() / 'AppData/Local') / 'QuotaStation'
     if sys.platform == 'darwin':

@@ -29,7 +29,7 @@ jobs:
       - name: Check PowerShell syntax
         shell: powershell
         run: |
-          foreach ($path in @('install.ps1', 'setup_desktop.ps1')) {
+          foreach ($path in @('install.ps1', 'setup_desktop.ps1', 'updater_shortcut.ps1')) {
             $tokens = $null
             $parseErrors = $null
             [void][System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD $path), [ref]$tokens, [ref]$parseErrors)

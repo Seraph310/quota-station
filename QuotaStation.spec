@@ -11,6 +11,7 @@ assets = root / 'build' / 'assets'
 datas = [(str(path), 'providers/qoder_runtime')
          for path in (root / 'providers/qoder_runtime').glob('*.mjs')]
 datas.append((str(assets / 'licenses'), 'licenses'))
+datas.append((str(root / 'updater_shortcut.ps1'), '.'))
 analysis = Analysis(
     [str(root / 'launcher.py')], pathex=[str(root)], binaries=[], datas=datas,
     hiddenimports=['providers.' + name for name in

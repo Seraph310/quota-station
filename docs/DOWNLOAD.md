@@ -24,4 +24,8 @@ macOS：Apple 芯片选 arm64，Intel 选 x64。打开 DMG，把 Quota Station.a
 
 升级时先从托盘菜单退出小站，再替换完整程序文件夹或 .app。无需移动用户目录里的设置。
 
+从 v0.4.0 起，可直接在卡片或托盘右键菜单选择“检查更新”，然后点击“一键升级”。程序会核对官方 GitHub Release 的 SHA-256，下载当前系统对应的程序，保留设置并重启；启动失败时回退。每天会静默检查一次，安装仍由你点击决定。
+
+v0.3.0 及更早版本需先安装一次带更新功能的版本。源码版的更新窗口提供“安装桌面版”，会复制当前设置并在 Windows 更新本项目的桌面快捷方式。源代码目录保留。
+
 第三方库许可证随程序放在 licenses 目录（Windows：_internal/licenses；macOS：应用包内 Contents/Resources/licenses）。对应源码和许可证链接见 THIRD_PARTY_NOTICES.txt。

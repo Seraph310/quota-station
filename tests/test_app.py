@@ -29,6 +29,15 @@ import app as quota_app
 LEFT = Qt.MouseButton.LeftButton
 
 
+def wait_until(predicate, timeout=3000):
+    deadline = time.monotonic() + timeout / 1000
+    while not predicate():
+        if time.monotonic() >= deadline:
+            return False
+        QTest.qWait(20)
+    return True
+
+
 def snapshot(index, balance):
     return {
         "name": quota_app.NAMES[index], "balance": balance,
@@ -90,7 +99,9 @@ class AppInteractionTests(unittest.TestCase):
         self.qt.processEvents()
 
     def wait_for_click(self):
+        # Wait for delivery, not a tight wall-clock margin on busy CI machines.
         QTest.qWait(self.qt.doubleClickInterval() + 100)
+        self.assertTrue(wait_until(lambda: not self.station.mini.timer.isActive(), 1500))
 
     def double_click(self, delay):
         mini = self.station.mini
@@ -630,6 +641,59 @@ class AppInteractionTests(unittest.TestCase):
         for invalid in (None, False, float("nan"), -1.0):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 quota_app.validate_snapshot(snapshot(2, invalid))
+
+    def test_update_check_is_silent_and_failed_download_keeps_app_running(self):
+        from updater_ui import core
+        controller = self.station.updater
+        controller.source_mode = False
+        release = {'version': '99.0.0', 'newer': True, 'notes': 'Synthetic release'}
+        controller.checked(release, '')
+        self.assertIsNone(controller.dialog)
+        self.assertIn('99.0.0', self.station.update_action.text())
+        with patch.object(core, 'prepare_update', side_effect=core.UpdateError('校验失败')), \
+             patch.object(self.station, 'quit') as quit_app:
+            controller.show()
+            self.assertEqual(controller.dialog.action.text(), '一键升级')
+            QTest.mouseClick(controller.dialog.action, LEFT)
+            self.assertTrue(wait_until(lambda: controller.state == 'error'))
+            self.assertIn('校验失败', controller.dialog.status.text())
+            quit_app.assert_not_called()
+        controller.dialog.close()
+
+    def test_one_click_upgrade_quits_only_after_helper_is_ready(self):
+        from updater_ui import core
+        from unittest.mock import Mock
+        controller = self.station.updater
+        controller.checked({'version': '99.0.0', 'newer': True, 'notes': ''}, '')
+        helper = Mock(poll=Mock(return_value=None))
+        with patch.object(core, 'prepare_update', return_value=Path('synthetic-job.json')), \
+             patch.object(core, 'launch_update', return_value=helper) as launch, \
+             patch.object(self.station, 'quit') as quit_app:
+            controller.show()
+            QTest.mouseClick(controller.dialog.action, LEFT)
+            self.assertTrue(wait_until(lambda: quit_app.called))
+            launch.assert_called_once()
+            quit_app.assert_called_once()
+        controller.dialog.close()
+
+    def test_cancelled_update_never_starts_installer(self):
+        from updater_ui import core
+        import threading
+        gate = threading.Event()
+        controller = self.station.updater
+        controller.checked({'version': '99.0.0', 'newer': True, 'notes': ''}, '')
+        def prepare(*_args):
+            gate.wait(2)
+            return Path('synthetic-job.json')
+        with patch.object(core, 'prepare_update', side_effect=prepare), \
+             patch.object(core, 'launch_update') as launch, patch.object(self.station, 'quit') as quit_app:
+            controller.show()
+            QTest.mouseClick(controller.dialog.action, LEFT)
+            controller.dialog.close()
+            gate.set()
+            self.assertTrue(wait_until(lambda: controller.state == 'error'))
+            launch.assert_not_called()
+            quit_app.assert_not_called()
 
     def magpie_sources(self):
         from providers.magpie_provider import normalize

@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 from source_picker import SourcePicker
 from page_turn import PageTurn
 from edge_dock import EdgeDock, nearest_screen
+from updater_ui import UpdateController
 from runtime_paths import data_root, native_source_keys, resource_root
 from version import __version__
 
@@ -428,6 +429,9 @@ class Station(QWidget):
         self.menu.addAction('展开全部额度', self.expand)
         self.menu.addAction('显示来源…', self.show_sources)
         self.menu.addAction('立即刷新', self.refresh)
+        self.update_action = self.menu.addAction('检查更新…')
+        self.updater = UpdateController(self, self.update_action)
+        self.update_action.triggered.connect(self.updater.show)
         self.menu.addAction('恢复小卡片默认大小', lambda: self.set_mini_scale(1.0, persist=True))
         self.undock_action = self.menu.addAction('取消边缘吸附', self.docking.undock)
         self.undock_action.setVisible(False)
@@ -969,6 +973,8 @@ class Station(QWidget):
         QMessageBox.information(self, self.source_name(index) + ' · 额度详情', self.details_text(index))
 
     def quit(self):
+        self.updater.cancel.set()
+        self.updater.auto_timer.stop()
         self.save_settings()
         self.tray.hide()
         QApplication.quit()
@@ -978,9 +984,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--version', action='version', version=__version__)
     parser.add_argument('--smoke-test', type=Path, help=argparse.SUPPRESS)
+    parser.add_argument('--update-ready', type=Path, help=argparse.SUPPRESS)
     parser.add_argument('--offline', action='store_true', help='Show cached data without querying providers')
     parser.add_argument('--expanded', action='store_true')
     parser.add_argument('--sources', action='store_true', help='Open the quota source selection page')
+    parser.add_argument('--updates', action='store_true', help='Open the update window')
     parser.add_argument('--qa-window', action='store_true', help='Expose a normal window for native accessibility verification')
     args = parser.parse_args()
     app = QApplication(sys.argv[:1])
@@ -994,15 +1002,19 @@ def main():
     # Match Windows' own double-click speed, including accessibility preferences.
     if os.name == 'nt':
         app.setDoubleClickInterval(ctypes.windll.user32.GetDoubleClickTime())
+    server_name = 'QuotaStation_v1'
+    if os.environ.get('QUOTA_STATION_DATA_DIR'):
+        import hashlib
+        server_name += '_' + hashlib.sha256(str(STATE.resolve()).encode()).hexdigest()[:16]
     socket = QLocalSocket()
-    socket.connectToServer('QuotaStation_v1')
+    socket.connectToServer(server_name)
     if socket.waitForConnected(400):
-        socket.write(b'sources' if args.sources else b'expanded' if args.expanded else b'show')
+        socket.write(b'updates' if args.updates else b'sources' if args.sources else b'expanded' if args.expanded else b'show')
         socket.waitForBytesWritten(400)
         return 0
-    QLocalServer.removeServer('QuotaStation_v1')
+    QLocalServer.removeServer(server_name)
     server = QLocalServer()
-    if not server.listen('QuotaStation_v1'):
+    if not server.listen(server_name):
         return 1
     station = Station(offline=args.offline)
     if args.qa_window:
@@ -1019,16 +1031,23 @@ def main():
             connection.deleteLater()
         if command == b'sources':
             station.show_sources()
+        elif command == b'updates':
+            station.updater.show()
         elif command == b'expanded':
             station.expand()
         else:
             station.reveal()
     server.newConnection.connect(incoming)
     station.show()
+    if args.update_ready:
+        from updater_core import mark_ready
+        QTimer.singleShot(700, lambda: mark_ready(args.update_ready, __version__))
     if args.expanded:
         station.expand()
     if args.sources:
         station.show_sources()
+    if args.updates:
+        station.updater.show()
     return app.exec()
 
 
