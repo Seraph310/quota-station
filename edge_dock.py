@@ -6,6 +6,7 @@ import math
 from PySide6.QtCore import QObject, QPoint, QRect, QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QCursor, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QApplication, QWidget
+from i18n import tr
 
 
 def nearest_screen(point, screens):
@@ -73,7 +74,7 @@ class DockBar(QWidget):
         self.setFixedSize(self.WIDTH, self.HEIGHT)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setCursor(Qt.CursorShape.SizeAllCursor)
-        self.setAccessibleName('额度小站侧边条，悬停查看，拖回屏幕恢复卡片')
+        self.setAccessibleName(tr('额度小站侧边条，悬停查看，拖回屏幕恢复卡片'))
 
     def sync(self):
         station = self.docking.station
@@ -81,7 +82,7 @@ class DockBar(QWidget):
         self.percent, self.quota_text = quota_indicator(station.snapshots.get(key))
         self.setToolTip(station.details_text(key))
         stale = '上次余额' if key in station.errors else '剩余额度'
-        self.setAccessibleName(f'{station.source_name(key)}，{stale} {self.quota_text}，悬停查看，拖回屏幕恢复卡片')
+        self.setAccessibleName(tr('{name}，{status} {value}，悬停查看，拖回屏幕恢复卡片', name=station.source_name(key), status=tr(stale), value=self.quota_text))
         self.update()
 
     def paintEvent(self, event):

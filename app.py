@@ -13,7 +13,7 @@ import threading
 import time
 
 from PySide6.QtCore import QObject, QPoint, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import QActionGroup, QColor, QFont, QFontDatabase, QIcon, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import (
     QApplication, QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel,
@@ -27,6 +27,8 @@ from edge_dock import EdgeDock, nearest_screen
 from updater_ui import UpdateController
 from runtime_paths import data_root, native_source_keys, resource_root
 from version import __version__
+import i18n
+from i18n import tr, pair
 
 BASE = resource_root()
 STATE = data_root() / 'state'
@@ -67,7 +69,7 @@ def number_text(data):
     if not data:
         return '—'
     if data.get('quota_state') == 'unlimited':
-        return '不限量'
+        return tr('不限量')
     value = data['balance']
     if data.get('unit') == '%':
         return f'{value:,.0f}%'
@@ -79,14 +81,14 @@ def number_text(data):
 
 def age_text(timestamp):
     if not timestamp:
-        return '尚未更新'
+        return tr('尚未更新')
     age = max(0, time.time() - float(timestamp))
     if age < 60:
-        return '刚刚更新'
+        return tr('刚刚更新')
     if age < 3600:
-        return f'{int(age // 60)} 分钟前'
+        return tr('{count} 分钟前', count=int(age // 60))
     if age < 86400:
-        return f'{int(age // 3600)} 小时前'
+        return tr('{count} 小时前', count=int(age // 3600))
     return time.strftime('%m-%d %H:%M', time.localtime(timestamp))
 
 
@@ -359,6 +361,7 @@ class Station(QWidget):
         settings = read_json(STATE / 'settings.json', {})
         if not isinstance(settings, dict):
             settings = {}
+        self.language = i18n.set_language(settings.get('language', 'auto'))
         native_keys = native_source_keys()
         self.sources = {i: {'id': i, 'name': NAMES[i], 'origin': '本机直连', 'color': COLORS[i],
                             'account': '', 'plan': '', 'available': True}
@@ -425,26 +428,38 @@ class Station(QWidget):
         self.paper.hide()
         self.tray = QSystemTrayIcon(icon(), self)
         self.menu = QMenu(self)
-        self.menu.addAction('显示额度小站', self.reveal)
-        self.menu.addAction('展开全部额度', self.expand)
-        self.menu.addAction('显示来源…', self.show_sources)
-        self.menu.addAction('立即刷新', self.refresh)
-        self.update_action = self.menu.addAction('检查更新…')
+        self.menu_text = []
+        self.menu_action('显示额度小站', self.reveal)
+        self.menu_action('展开全部额度', self.expand)
+        self.menu_action('显示来源…', self.show_sources)
+        self.menu_action('立即刷新', self.refresh)
+        self.update_action = self.menu_action('检查更新…')
         self.updater = UpdateController(self, self.update_action)
         self.update_action.triggered.connect(self.updater.show)
-        self.menu.addAction('恢复小卡片默认大小', lambda: self.set_mini_scale(1.0, persist=True))
-        self.undock_action = self.menu.addAction('取消边缘吸附', self.docking.undock)
+        self.menu_action('恢复小卡片默认大小', lambda: self.set_mini_scale(1.0, persist=True))
+        self.undock_action = self.menu_action('取消边缘吸附', self.docking.undock)
         self.undock_action.setVisible(False)
+        self.language_menu = self.menu.addMenu('Language / 语言')
+        self.language_group = QActionGroup(self)
+        self.language_actions = {}
+        for choice, caption in [('auto', tr('跟随系统')), ('zh-CN', '简体中文'), ('en', 'English')]:
+            action = self.language_menu.addAction(caption)
+            action.setCheckable(True)
+            action.setChecked(choice == self.language)
+            action.triggered.connect(lambda _checked=False, selected=choice: self.set_language(selected))
+            self.language_group.addAction(action)
+            self.language_actions[choice] = action
         self.menu.addSeparator()
-        self.top_action = self.menu.addAction('总在最前')
+        self.top_action = self.menu_action('总在最前')
         self.top_action.setCheckable(True)
         self.top_action.setChecked(self.topmost)
         self.top_action.triggered.connect(self.toggle_topmost)
-        self.menu.addAction('隐藏到托盘', self.hide)
-        self.menu.addAction('退出', self.quit)
+        self.menu_action('隐藏到托盘', self.hide)
+        self.menu_action('退出', self.quit)
         self.tray.setContextMenu(self.menu)
         self.tray.activated.connect(self.tray_activated)
         self.tray.show()
+        self.retranslate()
         self.render()
         self.layout().activate()
         area = QApplication.primaryScreen().availableGeometry()
@@ -468,7 +483,8 @@ class Station(QWidget):
         box.setSpacing(0)
         head = QHBoxLayout()
         text = QVBoxLayout()
-        text.addWidget(label('额度小站', 15, bold=True))
+        self.paper_title = label(tr('额度小站'), 15, bold=True)
+        text.addWidget(self.paper_title)
         head.addLayout(text)
         head.addStretch()
         self.close_button = QPushButton('↙')
@@ -524,7 +540,45 @@ class Station(QWidget):
         return self.visible_sources[self.active] if self.visible_sources else None
 
     def source_name(self, key):
-        return self.sources.get(key, {}).get('name', '额度小站')
+        return self.sources.get(key, {}).get('name', tr('额度小站'))
+
+    def menu_action(self, text, *args):
+        action = self.menu.addAction(tr(text), *args)
+        self.menu_text.append((action, text))
+        return action
+
+    def retranslate(self):
+        self.setWindowTitle(tr('额度小站'))
+        self.paper_title.setText(tr('额度小站'))
+        self.close_button.setAccessibleName(tr('收起额度详情'))
+        self.close_button.setToolTip(tr('收起（Esc）'))
+        self.refresh_button.setAccessibleName(tr('立即刷新全部额度'))
+        self.sources_button.setText(tr('显示来源'))
+        self.sources_button.setAccessibleName(tr('选择显示的 Agent 额度来源'))
+        self.mini.resize_grip.setAccessibleName(tr('拖动书页折角缩放小卡片'))
+        self.mini.resize_grip.setToolTip(tr('拖住小折角，沿对角线调整大小'))
+        for key, text in [('card', '小卡片'), ('ball', '悬浮球')]:
+            self.shape_buttons[key].setText(tr(text))
+        for action, text in self.menu_text:
+            action.setText(tr(text))
+        self.language_actions['auto'].setText(tr('跟随系统'))
+        for choice, action in self.language_actions.items():
+            action.setChecked(choice == self.language)
+        self.updater.sync()
+
+    def set_language(self, choice):
+        self.mini.timer.stop()
+        self.mini.page_turn.finish()
+        self.language = i18n.set_language(choice)
+        self.retranslate()
+        self.rebuild_rows()
+        self.selection_error = '' if self.save_settings() else '语言设置尚未保存，请检查 state 目录权限'
+        if self.source_picker:
+            self.source_picker.signature = None
+        self.render()
+        self.layout().activate()
+        if not self.docking.side:
+            self.clamp_position()
 
     def source_color(self, key):
         return self.sources.get(key, {}).get('color', COLORS[0])
@@ -564,7 +618,7 @@ class Station(QWidget):
             progress.hide()
             layout.addWidget(progress)
             info = QHBoxLayout()
-            left, right = label('正在连接', 11, MUTED), label('', 10, MUTED)
+            left, right = label(tr('正在连接'), 11, MUTED), label('', 10, MUTED)
             info.addWidget(left)
             info.addStretch()
             info.addWidget(right)
@@ -579,7 +633,7 @@ class Station(QWidget):
                 line.setStyleSheet(f'background:{LINE};border:0;')
                 box.addWidget(line)
         if not self.rows:
-            empty = QPushButton('选择显示来源')
+            empty = QPushButton(tr('选择显示来源'))
             empty.setStyleSheet(f'border:0;background:{SOFT};color:{COLORS[0]};border-radius:10px;padding:18px;')
             empty.clicked.connect(self.show_sources)
             box.addWidget(empty)
@@ -609,44 +663,44 @@ class Station(QWidget):
         self.mini.name.setStyleSheet(f'color:{color};font-size:{px(12)}px;border:0;background:transparent;')
         self.mini.value.setText(number_text(data))
         self.mini.value.setStyleSheet(f'color:{TEXT};font-size:{px(25 if len(number_text(data)) > 5 else 29)}px;font-weight:600;border:0;background:transparent;')
-        unit = data.get('subtitle', '剩余额度') if data else ('正在连接' if key in self.busy else '待连接')
-        self.mini.unit.setText(unit if key not in self.errors else ('上次余额' if data else '待连接'))
+        unit = tr(data.get('subtitle', '剩余额度') if data else ('正在连接' if key in self.busy else '待连接'))
+        self.mini.unit.setText(unit if key not in self.errors else tr('上次余额' if data else '待连接'))
         if key is None:
-            self.mini.unit.setText('选择显示来源')
+            self.mini.unit.setText(tr('选择显示来源'))
         self.mini.unit.setStyleSheet(f'color:{MUTED};font-size:{px(11)}px;border:0;background:transparent;')
         count = len(self.visible_sources)
         self.mini.dots.setText(' '.join('●' if i == self.active else '·' for i in range(count)) if count <= 6 else f'{self.active + 1} / {count}')
         self.mini.dots.setStyleSheet(f'color:{color};font-size:{px(11)}px;border:0;background:transparent;')
-        click_hint = '左侧上一页 · 右侧下一页' if self.shape == 'card' else '单击切换'
-        self.mini.setAccessibleName(f'{name} {unit} {number_text(data)}，{click_hint}，双击展开')
-        self.mini.setToolTip(self.details_text(key) + '\n\n' + click_hint + ' · 双击展开\n拖动调整位置 · 右键菜单 · Enter 展开 · 左右键切换')
+        click_hint = tr('左侧上一页 · 右侧下一页' if self.shape == 'card' else '单击切换')
+        self.mini.setAccessibleName(tr('{name} {unit} {value}，{hint}，双击展开', name=name, unit=unit, value=number_text(data), hint=click_hint))
+        self.mini.setToolTip(self.details_text(key) + '\n\n' + click_hint + tr(' · 双击展开\n拖动调整位置 · 右键菜单 · Enter 展开 · 左右键切换'))
         for i, (row, value, left, right, progress) in zip(self.row_keys, self.rows):
             item = self.snapshots.get(i)
             value.setText(number_text(item))
-            left.setText(item.get('subtitle', '剩余额度') if item else ('正在连接' if i in self.busy else '待连接'))
+            left.setText(tr(item.get('subtitle', '剩余额度') if item else ('正在连接' if i in self.busy else '待连接')))
             if i in self.errors:
-                right.setText('更新失败' if item else '待连接')
-                left.setText('上次余额' if item else '暂不可用')
+                right.setText(tr('更新失败' if item else '待连接'))
+                left.setText(tr('上次余额' if item else '暂不可用'))
             elif i in self.busy:
-                right.setText('更新中…')
+                right.setText(tr('更新中…'))
             elif item:
                 reset = item.get('reset_at')
-                right.setText(time.strftime('%m-%d %H:%M', time.localtime(reset)) + ' 重置' if reset else age_text(item.get('updated_at')))
+                right.setText(tr('{time} 重置', time=time.strftime('%m-%d %H:%M', time.localtime(reset))) if reset else age_text(item.get('updated_at')))
             else:
                 right.setText('')
             percent = item.get('remaining_percent', item.get('balance') if item.get('unit') == '%' else None) if item else None
             progress.setVisible(isinstance(percent, (int, float)))
             if isinstance(percent, (int, float)):
                 progress.setValue(round(percent * 10))
-            row.setToolTip(self.details_text(i) + '\n右键查看详情')
+            row.setToolTip(self.details_text(i) + tr('\n右键查看详情'))
         refreshing = bool(self.busy or self.magpie_busy)
         self.refresh_button.setEnabled(not refreshing)
-        self.refresh_button.setText('更新中' if refreshing else '刷新')
+        self.refresh_button.setText(tr('更新中' if refreshing else '刷新'))
         failed = any(key in self.errors for key in self.visible_sources)
-        self.last_updated.setText('部分来源待连接' if failed else ('每 5 分钟自动更新' if count else '尚未选择来源'))
+        self.last_updated.setText(tr('部分来源待连接' if failed else ('每 5 分钟自动更新' if count else '尚未选择来源')))
         for shape_key, button in self.shape_buttons.items():
             button.setChecked(shape_key == self.shape)
-        self.tray.setToolTip(('额度小站\n' + '\n'.join(f'{self.source_name(key)}  {number_text(self.snapshots.get(key))}' for key in self.visible_sources))[:120])
+        self.tray.setToolTip((tr('额度小站') + '\n' + '\n'.join(f'{self.source_name(key)}  {number_text(self.snapshots.get(key))}' for key in self.visible_sources))[:120])
         self.fit_rows()
         if self.source_picker:
             self.source_picker.sync()
@@ -655,7 +709,7 @@ class Station(QWidget):
 
     def write_runtime(self):
         try:
-            atomic_json(STATE / 'runtime.json', {'pid': os.getpid(), 'active': self.source_name(self.active_key), 'active_source': self.active_key, 'expanded': self.expanded, 'shape': self.shape, 'mini_scale': self.mini_scale, 'busy': sorted(self.busy), 'magpie_busy': self.magpie_busy, 'errors': self.errors, 'visible': self.isVisible(), 'geometry': [self.x(), self.y(), self.width(), self.height()], 'docked': self.docking.side, 'dock_peek': self.docking.peeked})
+            atomic_json(STATE / 'runtime.json', {'pid': os.getpid(), 'active': self.source_name(self.active_key), 'active_source': self.active_key, 'expanded': self.expanded, 'shape': self.shape, 'mini_scale': self.mini_scale, 'busy': sorted(self.busy), 'magpie_busy': self.magpie_busy, 'errors': self.errors, 'visible': self.isVisible(), 'geometry': [self.x(), self.y(), self.width(), self.height()], 'docked': self.docking.side, 'dock_peek': self.docking.peeked, 'language': self.language, 'resolved_language': i18n.language()})
         except OSError:
             pass
 
@@ -663,15 +717,18 @@ class Station(QWidget):
         item = self.snapshots.get(i)
         lines = [self.source_name(i)]
         if i in self.sources:
-            lines.append('来源：' + self.sources[i]['origin'])
+            lines.append(tr('来源：') + tr(self.sources[i]['origin']))
         if item:
-            lines.append(f'{item.get("subtitle", "剩余额度")}：{number_text(item)}' + (f' {item.get("unit", "")}' if item.get('unit') != '%' else ''))
-            lines.append('成功更新：' + time.strftime('%m-%d %H:%M:%S', time.localtime(item['updated_at'])))
+            lines.append(pair(tr(item.get('subtitle', '剩余额度')), number_text(item)) + (f' {tr(item.get("unit", ""))}' if item.get('unit') != '%' else ''))
+            lines.append(tr('成功更新：') + time.strftime('%m-%d %H:%M:%S', time.localtime(item['updated_at'])))
             for detail in item.get('details', []):
                 if isinstance(detail, dict):
-                    lines.append(f'{detail.get("label", "")}：{detail.get("value", "")}')
+                    value = detail.get('value', '')
+                    # Account names are user data, even when they match a UI key.
+                    value = str(value) if detail.get('label') == '账号' else tr(value)
+                    lines.append(pair(tr(detail.get('label', '')), value))
         if i in self.errors:
-            lines.append(self.errors[i])
+            lines.append(tr(self.errors[i]))
         return '\n'.join(lines)
 
     def refresh(self):
@@ -910,7 +967,7 @@ class Station(QWidget):
 
     def save_settings(self):
         try:
-            atomic_json(STATE / 'settings.json', {'shape': self.shape, 'mini_scale': self.mini_scale, 'topmost': self.topmost, 'x': self.x(), 'y': self.y(), 'visible_sources': self.visible_sources, 'magpie_connection': self.magpie_connection, 'edge_dock': self.docking.settings()})
+            atomic_json(STATE / 'settings.json', {'shape': self.shape, 'mini_scale': self.mini_scale, 'topmost': self.topmost, 'x': self.x(), 'y': self.y(), 'visible_sources': self.visible_sources, 'magpie_connection': self.magpie_connection, 'edge_dock': self.docking.settings(), 'language': self.language})
             return True
         except OSError:
             return False
@@ -970,7 +1027,7 @@ class Station(QWidget):
             super().keyPressEvent(event)
 
     def show_details(self, index):
-        QMessageBox.information(self, self.source_name(index) + ' · 额度详情', self.details_text(index))
+        QMessageBox.information(self, self.source_name(index) + tr(' · 额度详情'), self.details_text(index))
 
     def quit(self):
         self.updater.cancel.set()
@@ -992,7 +1049,7 @@ def main():
     parser.add_argument('--qa-window', action='store_true', help='Expose a normal window for native accessibility verification')
     args = parser.parse_args()
     app = QApplication(sys.argv[:1])
-    app.setApplicationName('额度小站')
+    app.setApplicationName('Quota Station')
     app.setOrganizationName('QuotaStation')
     app.setQuitOnLastWindowClosed(False)
     setup_fonts(app)

@@ -9,6 +9,7 @@ import time
 from PySide6.QtWidgets import QApplication
 import app as station_app
 from providers.magpie_provider import normalize
+from i18n import tr
 
 
 def demo_sources():
@@ -31,10 +32,11 @@ def demo_sources():
 
 
 @contextmanager
-def demo_state():
+def demo_state(language='zh-CN'):
     previous = station_app.STATE
     with TemporaryDirectory(prefix='quota-station-demo-') as directory:
         station_app.STATE = Path(directory)
+        (station_app.STATE / 'settings.json').write_text(json.dumps({'language': language}), encoding='utf-8')
         now = time.time()
         snapshots = {
             '0': {'name': 'Codex', 'balance': 78, 'unit': '%', 'subtitle': '本周剩余'},
@@ -58,28 +60,34 @@ class DemoStation(station_app.Station):
                                   'port': 3425, 'version': '演示', 'transport': 'gateway',
                                   'synced_at': time.time(), 'source_count': 6, 'readable_count': 6}
         self.receive_sources(demo_sources(), '')
-        self.setWindowTitle('额度小站 · 演示')
+        self.setWindowTitle(tr('额度小站 · 演示'))
 
     def show_sources(self):
         super().show_sources()
-        self.source_picker.setWindowTitle('额度小站 · 显示来源（演示数据）')
+        self.source_picker.setWindowTitle(tr('额度小站 · 显示来源（演示数据）'))
 
     def render(self):
         super().render()
-        self.mini.unit.setText('演示数据')
+        self.mini.unit.setText(tr('演示数据'))
         for _, _, _, right, _ in self.rows:
-            right.setText('演示数据')
-        self.last_updated.setText('演示模式 · 不连接账号')
-        self.refresh_button.setText('演示')
+            right.setText(tr('演示数据'))
+        self.last_updated.setText(tr('演示模式 · 不连接账号'))
+        self.refresh_button.setText(tr('演示'))
         self.refresh_button.setEnabled(False)
-        self.tray.setToolTip('额度小站 · 演示模式')
+        self.tray.setToolTip(tr('额度小站 · 演示模式'))
 
 
 def main():
     application = QApplication(sys.argv[:1])
     station_app.setup_fonts(application)
     application.setQuitOnLastWindowClosed(False)
-    with demo_state():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--language', choices=('zh-CN', 'en', 'auto'), default='auto')
+    parser.add_argument('--expanded', action='store_true')
+    parser.add_argument('--sources', action='store_true')
+    args = parser.parse_args()
+    with demo_state(args.language):
         station = DemoStation()
         station.show()
         if '--expanded' in sys.argv:

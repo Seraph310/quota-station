@@ -30,6 +30,6 @@ collection = COLLECT(exe, analysis.binaries, analysis.datas, strip=False, upx=Fa
 if mac:
     app = BUNDLE(collection, name='Quota Station.app', icon=str(assets / 'icon.icns'),
                  bundle_identifier='io.github.Seraph310.QuotaStation',
-                 info_plist={'CFBundleName': '额度小站', 'CFBundleDisplayName': '额度小站',
+                 info_plist={'CFBundleName': 'Quota Station', 'CFBundleDisplayName': 'Quota Station',
                              'CFBundleShortVersionString': __version__, 'CFBundleVersion': __version__,
                              'NSHighResolutionCapable': True, 'LSUIElement': True})

@@ -1,0 +1,22 @@
+name: Bug report / 问题反馈
+description: Something is not working / 遇到了使用问题
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version and system / 版本与系统
+      placeholder: "v0.5.0 · Windows 11 x64 / macOS 15 arm64"
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Affected source / 涉及的来源
+      placeholder: "Codex / Qoder / WorkBuddy / Magpie / UI"
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps, expected and actual behavior / 步骤、预期与实际结果
+      description: "English or 中文. Remove account names, tokens and other private information. 请移除账号、令牌及隐私信息。"
+    validations:
+      required: true

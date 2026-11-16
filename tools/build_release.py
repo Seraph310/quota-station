@@ -55,6 +55,8 @@ def prepare_assets():
         'VarFileInfo([VarStruct("Translation", [1033, 1200])])])', encoding='utf-8')
     licenses = assets / 'licenses'
     licenses.mkdir(exist_ok=True)
+    for name in ('LICENSE', 'NOTICE'):
+        shutil.copy2(ROOT / name, licenses / ('QuotaStation-' + name + '.txt'))
     (licenses / 'THIRD_PARTY_NOTICES.txt').write_text(
         'Quota Station bundles Python, PySide6/Qt, shiboken6, cryptography, certifi and their runtime dependencies.\n'
         'Python: https://www.python.org/psf/license/\n'
@@ -131,11 +133,17 @@ def main():
             shutil.copytree(bundle, staging / bundle.name, symlinks=True)
             (staging / 'Applications').symlink_to('/Applications', target_is_directory=True)
             shutil.copy2(ROOT / 'docs/DOWNLOAD.md', staging / '先读我.txt')
+            shutil.copy2(ROOT / 'docs/DOWNLOAD.en.md', staging / 'Read me.txt')
+            for name in ('LICENSE', 'NOTICE'):
+                shutil.copy2(ROOT / name, staging / (name + '.txt'))
             run('hdiutil', 'create', '-volname', 'Quota Station', '-srcfolder', staging,
                 '-ov', '-format', 'UDZO', destination / (stem + '.dmg'))
     else:
         folder = ROOT / 'dist/QuotaStation'
         shutil.copy2(ROOT / 'docs/DOWNLOAD.md', folder / '先读我.txt')
+        shutil.copy2(ROOT / 'docs/DOWNLOAD.en.md', folder / 'Read me.txt')
+        for name in ('LICENSE', 'NOTICE'):
+            shutil.copy2(ROOT / name, folder / (name + '.txt'))
         with zipfile.ZipFile(destination / (stem + '.zip'), 'w', zipfile.ZIP_DEFLATED) as archive:
             for path in sorted(folder.rglob('*')):
                 if path.is_file():

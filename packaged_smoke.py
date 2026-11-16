@@ -63,11 +63,25 @@ def run(application, destination):
             application.processEvents()
             assert station.updater.dialog.action.text() in ('一键升级', '安装桌面版')
             assert station.updater.dialog.grab().save(str(destination / 'updates.png'))
+            station.set_language('en')
+            application.processEvents()
+            assert station.source_picker.done_button.text() == 'Done'
+            assert station.updater.dialog.action.text() in ('Update now', 'Install desktop app')
+            assert station.grab().save(str(destination / 'expanded-en.png'))
+            assert station.source_picker.grab().save(str(destination / 'sources-en.png'))
+            assert station.updater.dialog.grab().save(str(destination / 'updates-en.png'))
+            station.collapse()
+            application.processEvents()
+            assert station.grab().save(str(destination / 'card-en.png'))
+            station.set_language('zh-CN')
+            assert station.source_picker.done_button.text() == '完成'
+            assert station.updater.dialog.action.text() in ('一键升级', '安装桌面版')
             report = {'success': True, 'version': __version__, 'frozen': bool(getattr(sys, 'frozen', False)),
                       'platform': sys.platform, 'architecture': platform.machine(),
                       'native_sources': station_app.native_source_keys(), 'state_isolated': True,
                       'provider_imports': modules, 'visible_sources': len(station.visible_sources),
-                      'edge_docking': ['left', 'right']}
+                      'edge_docking': ['left', 'right'], 'languages': ['zh-CN', 'en'],
+                      'live_language_switch': True}
         finally:
             if station.source_picker:
                 station.source_picker.close()

@@ -1,0 +1,10 @@
+name: Feature request / 功能建议
+description: Suggest an improvement / 提出改进建议
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What would you like to do? / 希望解决什么问题？
+      description: "Describe the situation and desired behavior. English or 中文. 请说明使用场景与期望效果。"
+    validations:
+      required: true

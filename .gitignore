@@ -7,6 +7,7 @@ __pycache__/
 .npm-cache/
 qa/
 tests/artifacts/
+tests/.app-test-*/
 tests/*_verification.json
 tmp/
 .release-tools/

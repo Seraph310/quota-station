@@ -81,6 +81,7 @@ class AppInteractionTests(unittest.TestCase):
         self.tray_show_patch = patch.object(quota_app.QSystemTrayIcon, "show", lambda _self: None)
         self.tray_show_patch.start()
         self.addCleanup(self.tray_show_patch.stop)
+        quota_app.atomic_json(quota_app.STATE / 'settings.json', {'language': 'zh-CN'})
         self.station = quota_app.Station(offline=True)
         self.station.poll.stop()
         self.station.clock.stop()

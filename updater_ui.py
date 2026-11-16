@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPlainTextEdit, QPro
 
 import updater_core as core
 from version import __version__
+from i18n import tr, language
 
 
 class UpdateSignals(QObject):
@@ -73,18 +74,28 @@ class UpdateDialog(QDialog):
 
     def sync(self):
         controller = self.controller
+        self.setWindowTitle(tr('额度小站 · 检查更新'))
+        self.version.setText(tr('当前版本  v{version}', version=__version__))
+        self.details.setText(tr('更新内容'))
         busy = controller.state in ('checking', 'downloading')
-        self.status.setText(controller.message)
+        self.status.setText(tr(controller.message))
         self.progress.setVisible(busy)
         self.progress.setRange(0, 0 if controller.percent < 0 else 100)
         if controller.percent >= 0:
             self.progress.setValue(controller.percent)
         self.action.setEnabled(not busy)
-        self.action.setText(('安装桌面版' if controller.source_mode else '一键升级')
-                            if controller.can_install() else '再次检查')
-        self.cancel.setText('取消' if controller.state == 'downloading' else '关闭')
+        self.action.setText(tr(('安装桌面版' if controller.source_mode else '一键升级')
+                            if controller.can_install() else '再次检查'))
+        self.cancel.setText(tr('取消' if controller.state == 'downloading' else '关闭'))
         self.details.setVisible(bool(controller.release))
         self.notes.setPlainText(controller.release['notes'] if controller.release else '')
+        # A live language switch can make a button wider than its old geometry.
+        for button in (self.details, self.cancel, self.action):
+            button.setMinimumWidth(button.fontMetrics().horizontalAdvance(button.text()) + 32)
+        if getattr(self, '_language', None) != language():
+            self._language = language()
+            self.layout().activate()
+            self.adjustSize()
 
     def closeEvent(self, event):
         if self.controller.state == 'downloading':
@@ -121,6 +132,9 @@ class UpdateController(QObject):
             self.auto_timer.start(20_000)
 
     def sync(self):
+        caption = '上次升级未完成…' if self.state == 'rollback' else (
+            f'发现新版本 v{self.release["version"]}…' if self.release and self.release['newer'] else '检查更新…')
+        self.action.setText(tr(caption))
         if self.dialog:
             self.dialog.sync()
 

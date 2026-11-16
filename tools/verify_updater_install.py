@@ -37,7 +37,7 @@ def main():
         for destination in (target, stage, runner):
             core.copy_program(bundle, destination)
         (target / 'old-version.marker').touch()
-        settings = {'shape': 'ball', 'mini_scale': 1.2, 'visible_sources': [0]}
+        settings = {'shape': 'ball', 'mini_scale': 1.2, 'visible_sources': [0], 'language': 'en'}
         core.write_json(data / 'state/settings.json', settings)
         job = {'id': token, 'target': str(target), 'stage': str(stage), 'backup': str(backup),
                'version': __version__, 'data_dir': str(data), 'source_root': '', 'parent_pid': 0,
@@ -55,7 +55,7 @@ def main():
             assert not (target / 'old-version.marker').exists()
             assert not stage.exists()
             report.update(success=True, settings_preserved=True, backup_preserved=True,
-                          frozen_helper=True, new_app_started=True)
+                          frozen_helper=True, new_app_started=True, language_preserved=True)
         finally:
             if new_pid and core.process_alive(new_pid):
                 os.kill(new_pid, signal.SIGTERM)

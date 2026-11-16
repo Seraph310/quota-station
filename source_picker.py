@@ -1,5 +1,6 @@
 """The source selection page. Checkboxes apply immediately and stay local."""
 import time
+from i18n import tr, language
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -36,9 +37,9 @@ class SourcePicker(QDialog):
         box.setContentsMargins(24, 22, 24, 18)
         box.setSpacing(14)
         header = QHBoxLayout()
-        title = QLabel('显示来源')
-        title.setStyleSheet('font-size:20px;font-weight:600;')
-        header.addWidget(title)
+        self.title = QLabel()
+        self.title.setStyleSheet('font-size:20px;font-weight:600;')
+        header.addWidget(self.title)
         header.addStretch()
         self.refresh_button = QPushButton('一键同步 Magpie')
         self.refresh_button.setAccessibleName('自动检测本机 Magpie 并同步额度来源')
@@ -71,10 +72,10 @@ class SourcePicker(QDialog):
         self.details_button.toggled.connect(self.connection_details.setVisible)
         footer.addWidget(self.details_button)
         footer.addStretch()
-        done = QPushButton('完成')
-        done.setStyleSheet('background:#458068;color:white;padding:8px 22px;')
-        done.clicked.connect(self.accept)
-        footer.addWidget(done)
+        self.done_button = QPushButton()
+        self.done_button.setStyleSheet('background:#458068;color:white;padding:8px 22px;')
+        self.done_button.clicked.connect(self.accept)
+        footer.addWidget(self.done_button)
         box.addLayout(footer)
         self.checkboxes = {}
         self.signature = None
@@ -83,8 +84,13 @@ class SourcePicker(QDialog):
 
     def sync(self):
         station = self.station
-        signature = [(key, item.get('name'), item.get('account'), item.get('plan'), item.get('available', True), station.errors.get(key))
-                     for key, item in station.sources.items()]
+        self.setWindowTitle(tr('额度小站 · 显示来源'))
+        self.title.setText(tr('显示来源'))
+        self.done_button.setText(tr('完成'))
+        self.details_button.setText(tr('同步详情'))
+        self.refresh_button.setAccessibleName(tr('自动检测本机 Magpie 并同步额度来源'))
+        signature = (language(), [(key, item.get('name'), item.get('account'), item.get('plan'), item.get('available', True), station.errors.get(key))
+                                 for key, item in station.sources.items()])
         if signature != self.signature:
             scroll_at = self.scroll.verticalScrollBar().value()
             focused = next((key for key, checkbox in self.checkboxes.items() if checkbox.hasFocus()), None)
@@ -96,7 +102,7 @@ class SourcePicker(QDialog):
             rows.setContentsMargins(0, 0, 10, 0)
             rows.setSpacing(0)
             for origin in ('本机直连', 'Magpie'):
-                heading = QLabel(origin)
+                heading = QLabel(tr(origin))
                 heading.setStyleSheet('color:#687265;font-size:12px;padding:14px 0 9px;')
                 rows.addWidget(heading)
                 entries = [(key, meta) for key, meta in station.sources.items() if meta['origin'] == origin]
@@ -108,14 +114,14 @@ class SourcePicker(QDialog):
                     checkbox = QCheckBox(meta['name'])
                     checkbox.setChecked(key in station.visible_sources)
                     account = meta.get('account', '')
-                    checkbox.setAccessibleName('显示 ' + meta['name'] + (' · ' + account if account else '') + ' · ' + origin)
+                    checkbox.setAccessibleName(tr('显示 {name}', name=meta['name']) + (' · ' + account if account else '') + ' · ' + tr(origin))
                     checkbox.toggled.connect(lambda checked, source=key: self.toggle(source, checked))
                     layout.addWidget(checkbox)
-                    caption = ' · '.join(filter(None, (account, meta.get('plan'))))
+                    caption = ' · '.join(filter(None, (account, tr(meta.get('plan') or ''))))
                     if key in station.errors:
                         status = '暂未连接' if not meta.get('available', True) else '额度暂不可用'
-                        caption = (caption + ' · ' if caption else '') + status
-                        checkbox.setToolTip(station.errors[key])
+                        caption = (caption + ' · ' if caption else '') + tr(status)
+                        checkbox.setToolTip(tr(station.errors[key]))
                     if caption:
                         subtitle = QLabel(caption)
                         subtitle.setTextFormat(Qt.TextFormat.PlainText)
@@ -125,7 +131,7 @@ class SourcePicker(QDialog):
                     rows.addWidget(frame)
                     self.checkboxes[key] = checkbox
                 if origin == 'Magpie' and not entries:
-                    empty = QLabel('暂无来源')
+                    empty = QLabel(tr('暂无来源'))
                     empty.setStyleSheet('color:#899185;font-size:12px;padding:8px 0;')
                     rows.addWidget(empty)
             rows.addStretch()
@@ -137,23 +143,23 @@ class SourcePicker(QDialog):
             checkbox.blockSignals(True)
             checkbox.setChecked(key in station.visible_sources)
             checkbox.blockSignals(False)
-        self.count.setText(f'已选 {len(station.visible_sources)} 项')
+        self.count.setText(tr('已选 {count} 项', count=len(station.visible_sources)))
         self.refresh_button.setEnabled(not station.magpie_busy and not station.offline)
-        self.refresh_button.setText(('同步中…' if station.magpie_syncing else '刷新中…') if station.magpie_busy else '一键同步 Magpie')
+        self.refresh_button.setText(tr(('同步中…' if station.magpie_syncing else '刷新中…') if station.magpie_busy else '一键同步 Magpie'))
         progress = '正在检测本机 Magpie 并同步额度…' if station.magpie_syncing else ''
-        self.status.setText(station.selection_error or station.magpie_error or progress or station.magpie_sync_message)
+        self.status.setText(tr(station.selection_error or station.magpie_error or progress or station.magpie_sync_message))
         self.status.setVisible(bool(self.status.text()))
         connection = station.magpie_connection
-        lines = ['程序路径：' + (connection.get('executable') or '尚未检测到')]
+        lines = [tr('程序路径：') + (connection.get('executable') or tr('尚未检测到'))]
         if connection.get('version'):
-            lines.append('版本：' + str(connection['version']))
+            lines.append(tr('版本：') + tr(connection['version']))
         if connection.get('transport'):
             transport = f'本机网关 · 127.0.0.1:{connection.get("port", 3425)}' if connection['transport'] == 'gateway' else 'Magpie 命令行'
-            lines.append('连接方式：' + transport)
+            lines.append(tr('连接方式：') + tr(transport))
         synced_at = connection.get('synced_at')
         if isinstance(synced_at, (int, float)):
             try:
-                lines.append('上次同步：' + time.strftime('%m-%d %H:%M:%S', time.localtime(synced_at)))
+                lines.append(tr('上次同步：') + time.strftime('%m-%d %H:%M:%S', time.localtime(synced_at)))
             except (ValueError, OSError, OverflowError):
                 pass
         self.connection_details.setText('\n'.join(lines))

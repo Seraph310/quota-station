@@ -1,5 +1,7 @@
 # 额度小站 · 下载版
 
+[English](DOWNLOAD.en.md) · [项目首页](../README.zh-CN.md)
+
 无需安装 Python。下载地址：https://github.com/Seraph310/quota-station/releases/latest
 
 Windows 10/11（64 位）：解压完整 ZIP，打开 QuotaStation 文件夹，双击 QuotaStation.exe。请保留旁边的 _internal 文件夹，可给 exe 创建桌面快捷方式。
@@ -9,6 +11,8 @@ macOS：Apple 芯片选 arm64，Intel 选 x64。打开 DMG，把 Quota Station.a
 换电脑后先安装并登录要查询的客户端。Windows 支持 Codex、Qoder、WorkBuddy 本机直连，以及 Magpie；macOS 支持 Codex CLI 和 Magpie。本版未实现 macOS 上 Qoder、WorkBuddy 的原生登录读取。
 
 双击卡片展开，点击“显示来源”勾选账号；“一键同步 Magpie”读取这台电脑已有的 Magpie 来源。左侧上一页、右侧下一页，拖右下折角调整大小。
+
+右键卡片或托盘 → **Language / 语言**，可选择“跟随系统 / 简体中文 / English”。切换立即生效并自动保存。首次启动跟随系统界面语言：中文系统使用中文，其他语言使用英文。
 
 拖过屏幕左、右边缘后松手，可收成显示剩余额度的窄条。悬停展开，移开收回；沿边缘上下拖动可调整位置，向屏幕内拖动恢复卡片。右键菜单也可取消吸附。
 
@@ -29,3 +33,5 @@ macOS：Apple 芯片选 arm64，Intel 选 x64。打开 DMG，把 Quota Station.a
 v0.3.0 及更早版本需先安装一次带更新功能的版本。源码版的更新窗口提供“安装桌面版”，会复制当前设置并在 Windows 更新本项目的桌面快捷方式。源代码目录保留。
 
 第三方库许可证随程序放在 licenses 目录（Windows：_internal/licenses；macOS：应用包内 Contents/Resources/licenses）。对应源码和许可证链接见 THIRD_PARTY_NOTICES.txt。
+
+小站本身使用 [PolyForm Noncommercial License 1.0.0](../LICENSE)，仅授权许可允许的非商业用途；超出许可允许范围的商业用途需另行授权。安装包附带 LICENSE.txt、NOTICE.txt，licenses 目录内也保留副本，随更新继续提供。第三方组件保留各自的许可。
