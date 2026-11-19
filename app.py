@@ -26,6 +26,8 @@ from page_turn import PageTurn
 from edge_dock import EdgeDock, nearest_screen
 from updater_ui import UpdateController
 from runtime_paths import data_root, native_source_keys, resource_root
+from providers import workbuddy_provider as workbuddy
+from workbuddy_watch import WorkBuddyAccountWatch
 from version import __version__
 import i18n
 from i18n import tr, pair
@@ -54,7 +56,7 @@ def atomic_json(path: Path, data):
 def validate_snapshot(data):
     if not isinstance(data, dict):
         raise ValueError('额度返回格式不正确')
-    if data.get('source') == 'magpie' and data.get('quota_state') == 'unlimited' and data.get('balance') is None:
+    if data.get('source') in ('magpie', 'workbuddy') and data.get('quota_state') == 'unlimited' and data.get('balance') is None:
         return data
     value = data.get('balance')
     money = data.get('source') == 'magpie' and data.get('kind') == 'balance' and data.get('unit') in ('$', '¥', '€', '£', '元', 'USD', 'CNY', 'EUR', 'GBP')
@@ -128,7 +130,7 @@ def icon(size=128):
 
 
 class Bridge(QObject):
-    result = Signal(int, object, str)
+    result = Signal(int, object, str, int)
     sources = Signal(object, str)
 
 
@@ -389,7 +391,25 @@ class Station(QWidget):
         self.setWindowIcon(icon())
         self.setStyleSheet(f'QToolTip{{background:{PAPER};color:{TEXT};border:1px solid {LINE};padding:8px;}} QMenu{{background:{PAPER};color:{TEXT};padding:7px;border:1px solid {LINE};}} QMenu::item{{padding:7px 22px;}} QMenu::item:selected{{background:{SOFT};}}')
         self.snapshots = {}
+        self.workbuddy_watch = WorkBuddyAccountWatch(self)
+        self.workbuddy_watch.changed.connect(self.workbuddy_file_changed)
+        watching_workbuddy = not offline and 2 in self.visible_sources
+        if watching_workbuddy:
+            self.workbuddy_watch.start(workbuddy.account_snapshot_path())
+        self.workbuddy_account = workbuddy.current_account() if watching_workbuddy else None
+        self.workbuddy_generation = 0
+        self.workbuddy_retry = QTimer(self)
+        self.workbuddy_retry.setSingleShot(True)
+        self.workbuddy_retry.setInterval(3000)
+        self.workbuddy_retry.timeout.connect(lambda: self.refresh_native((2,)))
         cached_balances = read_json(STATE / 'balances.json', {})
+        if watching_workbuddy and isinstance(cached_balances, dict) and '2' in cached_balances:
+            if not self.matches_workbuddy_account(cached_balances['2']):
+                del cached_balances['2']
+                try:
+                    atomic_json(STATE / 'balances.json', cached_balances)
+                except OSError:
+                    pass
         for key, value in cached_balances.items() if isinstance(cached_balances, dict) else []:
             try:
                 source_key = int(key) if key in ('0', '1', '2') else key
@@ -397,6 +417,7 @@ class Station(QWidget):
                     self.snapshots[source_key] = validate_snapshot(value)
             except (ValueError, TypeError, KeyError):
                 pass
+        self.workbuddy_retry_available = self.workbuddy_account is not None and 2 not in self.snapshots
         self.errors = {}
         self.busy = set()
         self.magpie_busy = False
@@ -737,25 +758,71 @@ class Station(QWidget):
         self.refresh_native()
         self.refresh_sources()
 
-    def refresh_native(self):
+    def matches_workbuddy_account(self, snapshot):
+        return (self.workbuddy_account is not None and isinstance(snapshot, dict)
+                and snapshot.get('source') == 'workbuddy'
+                and snapshot.get('account_key') == self.workbuddy_account.key)
+
+    def sync_workbuddy_account(self):
+        account = workbuddy.current_account()
+        cached = self.snapshots.get(2)
+        if account == self.workbuddy_account and (cached is None or self.matches_workbuddy_account(cached)):
+            return False
+        self.workbuddy_account = account
+        self.workbuddy_generation += 1
+        self.workbuddy_retry.stop()
+        self.workbuddy_retry_available = account is not None
+        self.errors.pop(2, None)
+        if cached is not None and not self.matches_workbuddy_account(cached):
+            del self.snapshots[2]
+            try:
+                atomic_json(STATE / 'balances.json', self.snapshots)
+            except OSError:
+                pass
+        self.mini.page_turn.finish()
+        self.render()
+        return True
+
+    def workbuddy_file_changed(self):
+        if not self.offline and 2 in self.visible_sources and self.sync_workbuddy_account():
+            self.request_native(2, 'workbuddy_provider')
+            self.render()
+
+    def refresh_native(self, only=None):
         if self.offline:
             return
         for i, module in enumerate(('codex_provider', 'qoder_provider', 'workbuddy_provider')):
-            if i not in self.visible_sources or i in self.busy:
+            if i not in self.visible_sources or (only is not None and i not in only):
                 continue
-            self.busy.add(i)
-            def run(index=i, provider=module):
-                try:
-                    result = validate_snapshot(importlib.import_module('providers.' + provider).fetch())
-                    self.bridge.result.emit(index, result, '')
-                except Exception as exc:
-                    # Adapters raise safe, user-facing errors; never log raw response bodies.
-                    message = str(exc) if isinstance(exc, (RuntimeError, ValueError)) else '连接暂不可用，请打开对应客户端并登录后刷新'
-                    if any(s in message.lower() for s in ('bearer ', 'token=', 'eyj', 'authorization')):
-                        message = '登录连接暂不可用，请打开对应客户端并登录后刷新'
-                    self.bridge.result.emit(index, None, message[:160])
-            threading.Thread(target=run, daemon=True, name=f'quota-{module}').start()
+            if i == 2:
+                self.workbuddy_watch.rearm()
+                self.sync_workbuddy_account()
+            self.request_native(i, module)
         self.render()
+
+    def request_native(self, index, provider):
+        if index == 2:
+            self.workbuddy_retry.stop()
+            if not self.workbuddy_account:
+                self.errors[index] = '未找到 WorkBuddy 登录状态，请先打开 WorkBuddy 并登录'
+                return
+        if index in self.busy:
+            return
+        self.busy.add(index)
+        generation = self.workbuddy_generation
+
+        def run():
+            try:
+                result = validate_snapshot(importlib.import_module('providers.' + provider).fetch())
+                self.bridge.result.emit(index, result, '', generation)
+            except Exception as exc:
+                # Adapters raise safe, user-facing errors; never log raw response bodies.
+                message = str(exc) if isinstance(exc, (RuntimeError, ValueError)) else '连接暂不可用，请打开对应客户端并登录后刷新'
+                if any(s in message.lower() for s in ('bearer ', 'token=', 'eyj', 'authorization')):
+                    message = '登录连接暂不可用，请打开对应客户端并登录后刷新'
+                self.bridge.result.emit(index, None, message[:160], generation)
+
+        threading.Thread(target=run, daemon=True, name=f'quota-{provider}').start()
 
     def sync_magpie(self):
         self.refresh_sources(synchronize=True)
@@ -844,8 +911,17 @@ class Station(QWidget):
         previous = self.active_key
         if checked and key not in self.visible_sources:
             self.visible_sources.append(key)
+            if key == 2 and not self.offline:
+                self.workbuddy_watch.start(workbuddy.account_snapshot_path())
+                self.sync_workbuddy_account()
+                self.request_native(2, 'workbuddy_provider')
         elif not checked and key in self.visible_sources:
             self.visible_sources.remove(key)
+            if key == 2:
+                self.workbuddy_watch.stop()
+                self.workbuddy_retry.stop()
+                self.workbuddy_retry_available = False
+                self.workbuddy_generation += 1
         self.active = self.visible_sources.index(previous) if previous in self.visible_sources else 0
         self.mini.origin_agent = self.active
         self.rebuild_rows()
@@ -853,7 +929,7 @@ class Station(QWidget):
         self.render()
         self.layout().activate()
         self.clamp_position()
-        if checked and key not in self.snapshots:
+        if checked and key != 2 and key not in self.snapshots:
             if isinstance(key, int):
                 self.refresh_native()
             else:
@@ -877,8 +953,22 @@ class Station(QWidget):
         if not any(meta['origin'] == 'Magpie' for meta in self.sources.values()):
             self.refresh_sources()
 
-    def receive(self, index, data, error):
+    def receive(self, index, data, error, generation=0):
         self.busy.discard(index)
+        if index == 2 and not self.offline:
+            if 2 not in self.visible_sources:
+                self.render()
+                return
+            self.sync_workbuddy_account()
+            if generation != self.workbuddy_generation:
+                self.refresh_native((2,))
+                return
+            if not error and not self.matches_workbuddy_account(data):
+                error = 'WorkBuddy 账号已切换，正在重新读取'
+            # Allow one retry while the desktop client opens or switches accounts.
+            if error and self.workbuddy_retry_available:
+                self.workbuddy_retry.start()
+            self.workbuddy_retry_available = False
         if error:
             self.errors[index] = error
         else:
@@ -1030,6 +1120,8 @@ class Station(QWidget):
         QMessageBox.information(self, self.source_name(index) + tr(' · 额度详情'), self.details_text(index))
 
     def quit(self):
+        self.workbuddy_watch.stop()
+        self.workbuddy_retry.stop()
         self.updater.cancel.set()
         self.updater.auto_timer.stop()
         self.save_settings()

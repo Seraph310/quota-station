@@ -1,220 +1,217 @@
-"""Windows-only credential helpers adapted from the user's existing credits ball.
-
-Source: ~/WorkBuddy/wb-credits-ball/credits_ball.py, read-only source.
-No process writes, privilege elevation, application launch, or non-WorkBuddy
-process discovery. Secret values must never be logged by callers.
-"""
-
+"""Read the WorkBuddy account menu using Windows accessibility controls."""
 from __future__ import annotations
 
-import base64
 import ctypes
-from ctypes import wintypes as wt
-import json
+from ctypes import wintypes
 import os
 from pathlib import Path
-import re
 import time
 
-
-_TOKEN = re.compile(rb"Bearer (eyJ[A-Za-z0-9_\-]{20,}\.[A-Za-z0-9_\-]{20,}\.[A-Za-z0-9_\-]{20,})")
-_PIPE = re.compile(r"workbuddy-pac-(\d+)-")
+from .workbuddy_provider import current_account, parse_amount
 
 
-class DataBlob(ctypes.Structure):
-    _fields_ = [("size", wt.DWORD), ("data", ctypes.POINTER(ctypes.c_char))]
+def _window_handles():
+    user = ctypes.windll.user32
+    kernel = ctypes.windll.kernel32
+    kernel.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.QueryFullProcessImageNameW.argtypes = (wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD))
+    kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
+    user.GetWindowTextW.argtypes = (wintypes.HWND, wintypes.LPWSTR, ctypes.c_int)
+    user.GetClassNameW.argtypes = user.GetWindowTextW.argtypes
+    user.GetWindowThreadProcessId.argtypes = (wintypes.HWND, ctypes.POINTER(wintypes.DWORD))
+    user.IsWindowVisible.argtypes = (wintypes.HWND,)
+    handles = []
 
-
-class MemoryInformation(ctypes.Structure):
-    _fields_ = [
-        ("base", ctypes.c_void_p), ("allocation_base", ctypes.c_void_p),
-        ("allocation_protect", wt.DWORD), ("region_size", ctypes.c_size_t),
-        ("state", wt.DWORD), ("protect", wt.DWORD), ("kind", wt.DWORD),
-    ]
-
-
-def token_metadata(token: str) -> dict:
-    try:
-        chunk = token.split(".")[1]
-        value = json.loads(base64.urlsafe_b64decode(chunk + "=" * (-len(chunk) % 4)))
-        return value if isinstance(value, dict) else {}
-    except (ValueError, IndexError, TypeError):
-        return {}
-
-
-def valid_token(token: str | None) -> bool:
-    if not isinstance(token, str) or len(token) > 32768 or token.count(".") != 2:
-        return False
-    metadata = token_metadata(token)
-    try:
-        return metadata.get("aud") == "account" and float(metadata["exp"]) > time.time() + 30
-    except (KeyError, ValueError, TypeError, OverflowError):
-        return False
-
-
-def _kernel():
-    if os.name != "nt":
-        raise RuntimeError("WorkBuddy 登录读取需要 Windows 环境")
-    lib = ctypes.WinDLL("kernel32", use_last_error=True)
-    lib.OpenProcess.argtypes = [wt.DWORD, wt.BOOL, wt.DWORD]
-    lib.OpenProcess.restype = wt.HANDLE
-    lib.CloseHandle.argtypes = [wt.HANDLE]
-    lib.CloseHandle.restype = wt.BOOL
-    lib.LocalFree.argtypes = [ctypes.c_void_p]
-    lib.LocalFree.restype = ctypes.c_void_p
-    lib.ReadProcessMemory.argtypes = [wt.HANDLE, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
-    lib.ReadProcessMemory.restype = wt.BOOL
-    lib.VirtualQueryEx.argtypes = [wt.HANDLE, ctypes.c_void_p, ctypes.POINTER(MemoryInformation), ctypes.c_size_t]
-    lib.VirtualQueryEx.restype = ctypes.c_size_t
-    lib.FindFirstFileW.argtypes = [wt.LPCWSTR, ctypes.c_void_p]
-    lib.FindFirstFileW.restype = wt.HANDLE
-    lib.FindNextFileW.argtypes = [wt.HANDLE, ctypes.c_void_p]
-    lib.FindNextFileW.restype = wt.BOOL
-    lib.FindClose.argtypes = [wt.HANDLE]
-    lib.FindClose.restype = wt.BOOL
-    return lib
-
-
-def _dpapi(data: bytes, encrypt: bool) -> bytes | None:
-    if not data or len(data) > 65536 or os.name != "nt":
-        return None
-    kernel = _kernel()
-    crypt = ctypes.WinDLL("crypt32", use_last_error=True)
-    function = crypt.CryptProtectData if encrypt else crypt.CryptUnprotectData
-    function.argtypes = [ctypes.POINTER(DataBlob), ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, wt.DWORD, ctypes.POINTER(DataBlob)]
-    function.restype = wt.BOOL
-    buffer = ctypes.create_string_buffer(data, len(data))
-    incoming = DataBlob(len(data), ctypes.cast(buffer, ctypes.POINTER(ctypes.c_char)))
-    outgoing = DataBlob()
-    # CRYPTPROTECT_UI_FORBIDDEN: never prompt for user interaction.
-    if not function(ctypes.byref(incoming), None, None, None, None, 1, ctypes.byref(outgoing)):
-        return None
-    try:
-        return ctypes.string_at(outgoing.data, outgoing.size)
-    finally:
-        kernel.LocalFree(outgoing.data)
-
-
-def read_cached_token(path: Path) -> str | None:
-    try:
-        if path.stat().st_size > 65536:
-            return None
-        plain = _dpapi(path.read_bytes(), encrypt=False)
-        token = plain.decode("utf-8") if plain else None
-        return token if valid_token(token) else None
-    except (OSError, UnicodeError):
-        return None
-
-
-def write_cached_token(path: Path, token: str) -> bool:
-    """Caller supplies only a cache destination inside this new project."""
-    if not valid_token(token):
-        return False
-    encrypted = _dpapi(token.encode("utf-8"), encrypt=True)
-    if not encrypted:
-        return False
-    temporary = path.with_suffix(path.suffix + ".part")
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary.write_bytes(encrypted)
-        temporary.replace(path)
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def visit(hwnd, _):
+        text = ctypes.create_unicode_buffer(260)
+        user.GetWindowTextW(hwnd, text, len(text))
+        if text.value != 'WorkBuddy':
+            return True
+        user.GetClassNameW(hwnd, text, len(text))
+        if not text.value.startswith('Chrome_WidgetWin_'):
+            return True
+        pid = wintypes.DWORD()
+        user.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        handle = kernel.OpenProcess(0x1000, False, pid.value)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if handle:
+            try:
+                filename = ctypes.create_unicode_buffer(32768)
+                size = wintypes.DWORD(len(filename))
+                if kernel.QueryFullProcessImageNameW(handle, 0, filename, ctypes.byref(size)):
+                    if Path(filename.value).name.casefold() == 'workbuddy.exe':
+                        handles.append((bool(user.IsWindowVisible(hwnd)), hwnd))
+            finally:
+                kernel.CloseHandle(handle)
         return True
-    except OSError:
-        return False
+
+    user.EnumWindows(visit, 0)
+    return [hwnd for _, hwnd in sorted(handles, reverse=True)]
 
 
-def _workbuddy_pids(kernel) -> list[int]:
-    # Same named-pipe discovery as the original program. No all-process scan.
-    buffer = ctypes.create_string_buffer(592)  # WIN32_FIND_DATAW
-    handle = kernel.FindFirstFileW(r"\\.\pipe\workbuddy-pac-*", buffer)
-    if not handle or handle == ctypes.c_void_p(-1).value:
-        return []
-    pids = set()
+# MSAA roles from oleacc.h.
+MENU_POPUP, MENU_ITEM, TEXT, BUTTON, MENU_BUTTON = 11, 12, 41, 43, 57
+BALANCE_LABELS = ('积分余额', '積分餘額', 'Credits Balance', 'Credit Balance')
+REFRESH_LABELS = {'刷新', '重新整理', 'Refresh'}
+
+
+class Accessible:
+    def __init__(self, api, obj, child=0):
+        self.api = api
+        self.obj = obj
+        self.child = child
+
+    @property
+    def role(self):
+        return self.obj.accRole[self.child]
+
+    @property
+    def name(self):
+        return self.obj.accName[self.child] or ''
+
+    def activate(self):
+        self.obj.accDoDefaultAction(self.child)
+
+    def children(self):
+        if self.child:
+            return []
+        from comtypes.automation import VARIANT, VT_DISPATCH, VT_I4
+        count = min(256, self.obj.accChildCount)
+        if count <= 0:
+            return []
+        variants = (VARIANT * count)()
+        obtained = ctypes.c_long()
+        self.api.children(self.obj, 0, count, variants, ctypes.byref(obtained))
+        nodes = []
+        for variant in variants[:obtained.value]:
+            if variant.vt == VT_DISPATCH:
+                nodes.append(Accessible(self.api, variant.value.QueryInterface(self.api.interface)))
+            elif variant.vt == VT_I4 and variant.value > 0:
+                nodes.append(Accessible(self.api, self.obj, variant.value))
+        return nodes
+
+
+class Accessibility:
+    def __init__(self, interface):
+        from comtypes import GUID
+        from comtypes.automation import VARIANT
+        self.interface = interface
+        pointer = ctypes.POINTER(interface)
+        oleacc = ctypes.oledll.oleacc
+        self.from_window = oleacc.AccessibleObjectFromWindow
+        self.from_window.argtypes = (wintypes.HWND, wintypes.DWORD, ctypes.POINTER(GUID), ctypes.POINTER(pointer))
+        self.children = oleacc.AccessibleChildren
+        self.children.argtypes = (pointer, ctypes.c_long, ctypes.c_long, ctypes.POINTER(VARIANT), ctypes.POINTER(ctypes.c_long))
+
+    def root(self, hwnd):
+        obj = ctypes.POINTER(self.interface)()
+        self.from_window(hwnd, 0xFFFFFFFC, ctypes.byref(self.interface._iid_), ctypes.byref(obj))  # OBJID_CLIENT
+        return Accessible(self, obj)
+
+
+def _find(root, predicate, limit=900):
+    # Return the parent too so the balance search stays inside this avatar's menu.
+    from collections import deque
+    queue = deque([(None, root)])
+    for _ in range(limit):
+        if not queue:
+            break
+        parent, node = queue.popleft()
+        if predicate(node):
+            return parent, node
+        queue.extend((node, child) for child in node.children())
+    return None, None
+
+
+def _account_popup(anchor):
+    return _find(anchor, lambda n: n.role == MENU_POPUP, limit=45)[1]
+
+
+def _credit_cell(popup, nickname):
+    if not popup:
+        return None
+    items = popup.children()
+    if not any(item.role == TEXT and item.name == nickname for item in items):
+        return None
+    return next((item for item in items if item.role == BUTTON and
+                 any(item.name.casefold().startswith(label.casefold() + ' ') for label in BALANCE_LABELS)), None)
+
+
+def _read_menu(anchor, trigger, account):
+    opened_here = _account_popup(anchor) is None
+    if opened_here:
+        trigger.activate()
     try:
-        while True:
-            name = buffer.raw[44:564].decode("utf-16-le", "ignore").split("\0")[0]
-            match = _PIPE.search(name)
-            if match:
-                pids.add(int(match.group(1)))
-            if not kernel.FindNextFileW(handle, buffer):
-                break
-    finally:
-        kernel.FindClose(handle)
-    return sorted(pids)
-
-
-def find_running_token() -> str | None:
-    """Read a bounded amount from existing WorkBuddy service process memory."""
-    if ctypes.sizeof(ctypes.c_void_p) != 8:
-        return None
-    kernel = _kernel()
-    deadline = time.monotonic() + 8
-    remaining = 512 * 1024 * 1024
-    newest, newest_iat = None, -1.0
-    for pid in _workbuddy_pids(kernel):
-        handle = kernel.OpenProcess(0x0400 | 0x0010, False, pid)
-        if not handle:
-            continue
-        try:
-            address = 0
-            info = MemoryInformation()
-            while time.monotonic() < deadline and remaining > 0:
-                if not kernel.VirtualQueryEx(handle, ctypes.c_void_p(address), ctypes.byref(info), ctypes.sizeof(info)):
-                    break
-                base, size = int(info.base or 0), int(info.region_size)
-                if size <= 0 or base + size <= address:
-                    break
-                if info.state == 0x1000 and info.kind == 0x20000 and info.protect in (0x02, 0x04, 0x20, 0x40):
-                    offset, tail = 0, b""
-                    while offset < size and remaining > 0 and time.monotonic() < deadline:
-                        count = min(8 * 1024 * 1024, size - offset, remaining)
-                        buffer = ctypes.create_string_buffer(count)
-                        read = ctypes.c_size_t()
-                        ok = kernel.ReadProcessMemory(handle, ctypes.c_void_p(base + offset), buffer, count, ctypes.byref(read))
-                        remaining -= count
-                        offset += count
-                        if not ok:
-                            tail = b""
-                            continue
-                        data = tail + buffer.raw[:read.value]
-                        for match in _TOKEN.finditer(data):
-                            token = match.group(1).decode("ascii")
-                            if valid_token(token):
+        # WorkBuddy fetches account usage when its menu opens. Its dedicated
+        # refresh control is needed when the user already had that menu open.
+        refreshed = opened_here
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            if current_account() != account:
+                raise RuntimeError('WorkBuddy 账号已切换，正在重新读取')
+            cell = _credit_cell(_account_popup(anchor), account.nickname)
+            if cell:
+                if not refreshed:
+                    refresh = next((n for n in cell.children() if n.role == BUTTON and n.name in REFRESH_LABELS), None)
+                    if refresh:
+                        refresh.activate()
+                        refreshed = True
+                        time.sleep(0.25)
+                        continue
+                name = cell.name
+                words = name.split()
+                if not any(s.casefold() in ('非最新', 'stale') for s in words):
+                    for label in BALANCE_LABELS:
+                        if name.casefold().startswith(label.casefold() + ' '):
+                            amount = name[len(label):].split()
+                            if amount:
                                 try:
-                                    issued = float(token_metadata(token).get("iat", 0))
-                                except (TypeError, ValueError):
-                                    issued = 0
-                                if issued >= newest_iat:
-                                    newest, newest_iat = token, issued
-                        tail = data[-32768:]
-                address = base + size
+                                    parse_amount(amount[0])
+                                    return amount[0]
+                                except RuntimeError:
+                                    pass
+                            break
+            time.sleep(0.2)
+        raise RuntimeError('WorkBuddy 尚未显示当前账号的积分')
+    finally:
+        if opened_here and current_account() == account and _account_popup(anchor):
+            trigger.activate()
+
+
+def _read(api, handles, account):
+    from comtypes import COMError
+    valid_names = {account.nickname, f'{account.nickname} {account.nickname}'}
+    for hwnd in handles:
+        try:
+            root = api.root(hwnd)
+            for _ in range(3):  # Chromium attaches its accessibility tree on demand.
+                anchor, trigger = _find(root, lambda n: n.role in (MENU_BUTTON, MENU_ITEM) and n.name in valid_names)
+                if trigger and anchor:
+                    return _read_menu(anchor, trigger, account)
+                time.sleep(0.2)
+        except (COMError, OSError):
+            continue
+    raise RuntimeError('等待 WorkBuddy 客户端显示当前账号')
+
+
+def read_balance(account):
+    handles = _window_handles()
+    if not handles or not account.nickname:
+        raise RuntimeError('等待 WorkBuddy 客户端显示当前账号')
+    try:
+        import comtypes
+        import comtypes.client
+        try:
+            from comtypes.gen import Accessibility as msaa
+        except ImportError:
+            msaa = comtypes.client.GetModule(str(Path(os.environ['SystemRoot']) / 'System32/oleacc.dll'))
+        comtypes.CoInitialize()
+        try:
+            return _read(Accessibility(msaa.IAccessible), handles, account)
         finally:
-            kernel.CloseHandle(handle)
-    return newest
-
-
-def executable_version(path: Path) -> str | None:
-    if os.name != "nt" or not path.is_file():
-        return None
-    version = ctypes.WinDLL("version", use_last_error=True)
-    version.GetFileVersionInfoSizeW.argtypes = [wt.LPCWSTR, ctypes.POINTER(wt.DWORD)]
-    version.GetFileVersionInfoSizeW.restype = wt.DWORD
-    version.GetFileVersionInfoW.argtypes = [wt.LPCWSTR, wt.DWORD, wt.DWORD, ctypes.c_void_p]
-    version.GetFileVersionInfoW.restype = wt.BOOL
-    version.VerQueryValueW.argtypes = [ctypes.c_void_p, wt.LPCWSTR, ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(wt.UINT)]
-    version.VerQueryValueW.restype = wt.BOOL
-    unused = wt.DWORD()
-    size = version.GetFileVersionInfoSizeW(str(path), ctypes.byref(unused))
-    if not size or size > 4 * 1024 * 1024:
-        return None
-    buffer = ctypes.create_string_buffer(size)
-    if not version.GetFileVersionInfoW(str(path), 0, size, buffer):
-        return None
-    pointer, length = ctypes.c_void_p(), wt.UINT()
-    if not version.VerQueryValueW(buffer, "\\", ctypes.byref(pointer), ctypes.byref(length)) or length.value < 52:
-        return None
-    fixed = ctypes.cast(pointer, ctypes.POINTER(wt.DWORD))
-    if fixed[0] != 0xFEEF04BD:
-        return None
-    major_minor, build_revision = fixed[4], fixed[5]  # product version
-    return f"{major_minor >> 16}.{major_minor & 65535}.{build_revision >> 16}"
+            comtypes.CoUninitialize()
+    except RuntimeError:
+        raise
+    except Exception:
+        raise RuntimeError('WorkBuddy 额度暂时无法读取，请稍后重试') from None

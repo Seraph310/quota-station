@@ -334,7 +334,7 @@ def migrate_source_state(job_file):
     if not job['source_root']:
         return
     source, destination = Path(job['source_root']), Path(job['data_dir'])
-    for relative in ('state/settings.json', 'state/sources.json', 'state/balances.json', '.cache/workbuddy-token.bin'):
+    for relative in ('state/settings.json', 'state/sources.json', 'state/balances.json'):
         old, new = source / relative, destination / relative
         if old.is_file() and old.resolve() != new.resolve():
             if new.exists():

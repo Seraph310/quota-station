@@ -1,3 +1,4 @@
 PySide6==6.11.2
 cryptography==50.0.1
 certifi==2026.10.23
+comtypes==1.4.17; sys_platform == "win32"

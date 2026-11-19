@@ -246,6 +246,11 @@ EN = {
     'WorkBuddy 资源包额度字段异常，暂不能确认剩余积分': 'Invalid WorkBuddy package quota. Remaining points are unavailable.',
     '未找到 WorkBuddy 登录状态，请先打开 WorkBuddy 并登录': 'WorkBuddy sign-in not found. Open WorkBuddy and sign in.',
     'WorkBuddy 额度暂时无法读取，请稍后重试': 'Could not read WorkBuddy quotas. Please retry later.',
+    'WorkBuddy 本机额度目前仅支持 Windows': 'Local WorkBuddy quotas are currently available on Windows.',
+    'WorkBuddy 尚未显示当前账号的积分': 'Waiting for WorkBuddy to show credits for the current account.',
+    'WorkBuddy 账号已切换，正在重新读取': 'WorkBuddy switched accounts. Checking the new balance.',
+    '等待 WorkBuddy 客户端显示当前账号': 'Waiting for the WorkBuddy client to show the current account.',
+    'WorkBuddy 客户端积分余额': 'Credit balance shown in the WorkBuddy client',
 }
 
 # These also render canonical Chinese snapshots/errors cached by pre-i18n apps.

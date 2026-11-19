@@ -12,6 +12,7 @@ import locale
 import os
 from pathlib import Path
 import tempfile
+import threading
 import time
 import unittest
 from unittest.mock import patch
@@ -45,6 +46,14 @@ def snapshot(index, balance):
         "subtitle": "本周剩余" if index == 0 else "剩余额度",
         "reset_at": None, "details": [], "updated_at": time.time(),
     }
+
+
+def write_workbuddy_marker(marker, uid, *, replace=True):
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    dest = marker.with_suffix('.tmp') if replace else marker
+    dest.write_text(json.dumps({'primary': {'uid': uid, 'type': 'personal', 'nickname': 'Same name'}}), 'utf-8')
+    if replace:
+        dest.replace(marker)
 
 
 class AppInteractionTests(unittest.TestCase):
@@ -103,6 +112,155 @@ class AppInteractionTests(unittest.TestCase):
         # Wait for delivery, not a tight wall-clock margin on busy CI machines.
         QTest.qWait(self.qt.doubleClickInterval() + 100)
         self.assertTrue(wait_until(lambda: not self.station.mini.timer.isActive(), 1500))
+
+    def test_workbuddy_switch_during_request_then_logout(self):
+        station = self.station
+        station.offline = False
+        station.visible_sources = [2]
+        started, release = threading.Event(), threading.Event()
+        profile = Path(self.temporary.name) / 'workbuddy'
+        def read():
+            account = quota_app.workbuddy.current_account()
+            if account == a:
+                started.set()
+                release.wait(3)
+            value = snapshot(2, 18 if account == a else 0)
+            return dict(value, source='workbuddy', account_key=account.key)
+        with patch.dict(os.environ, WORKBUDDY_HOME=str(profile)), \
+             patch.object(quota_app.workbuddy, 'fetch', side_effect=read):
+            try:
+                marker = quota_app.workbuddy.account_snapshot_path()
+                write_workbuddy_marker(marker, 'alpha')
+                a = quota_app.workbuddy.current_account()
+                station.workbuddy_watch.start(marker)
+                station.workbuddy_account = a
+                station.receive(2, dict(snapshot(2, 120), source='workbuddy', account_key=a.key), '')
+                station.refresh_native((2,))
+                self.assertTrue(started.wait(1))
+                write_workbuddy_marker(marker, 'bravo')
+                b = quota_app.workbuddy.current_account()
+                self.assertTrue(wait_until(lambda: station.workbuddy_account == b))
+                self.assertEqual(station.mini.value.text(), '—')
+                self.assertNotIn('2', quota_app.read_json(quota_app.STATE / 'balances.json', {}))
+                release.set()
+                self.assertTrue(wait_until(lambda: station.snapshots.get(2, {}).get('account_key') == b.key))
+                self.assertEqual(station.mini.value.text(), '0')
+                marker.unlink()
+                self.assertTrue(wait_until(lambda: station.workbuddy_account is None))
+                self.assertEqual(station.mini.value.text(), '—')
+                self.assertNotIn('2', quota_app.read_json(quota_app.STATE / 'balances.json', {}))
+            finally:
+                release.set()
+                station.workbuddy_watch.stop()
+                station.offline = True
+
+    def test_workbuddy_idle_file_events_and_deselection(self):
+        profile = Path(self.temporary.name) / 'workbuddy'
+        profile.mkdir()
+        quota_app.atomic_json(quota_app.STATE / 'settings.json', {'language': 'zh-CN', 'visible_sources': [2]})
+        current = quota_app.workbuddy.current_account
+        def read():
+            return dict(snapshot(2, 18), source='workbuddy', account_key=current().key)
+        with patch.dict(os.environ, WORKBUDDY_HOME=str(profile), QUOTA_STATION_DATA_DIR=self.temporary.name), \
+             patch.object(quota_app.Station, 'refresh_sources'), \
+             patch.object(quota_app.workbuddy, 'current_account', wraps=current) as checks, \
+             patch.object(quota_app.workbuddy, 'fetch', side_effect=read) as fetch:
+            live = quota_app.Station()
+            live.updater.auto_timer.stop()
+            try:
+                # The file and its immediate directory do not exist on first run.
+                marker = quota_app.workbuddy.account_snapshot_path()
+                QTest.qWait(450)
+                write_workbuddy_marker(marker, 'alpha')
+                self.assertTrue(wait_until(lambda: 2 in live.snapshots))
+                self.assertEqual(fetch.call_count, 1)
+
+                # Watch an atomic replacement, then an in-place write to its successor.
+                for uid, replace in [('bravo', True), ('cello', False)]:
+                    old = live.snapshots[2]['account_key']
+                    write_workbuddy_marker(marker, uid, replace=replace)
+                    self.assertTrue(wait_until(lambda: live.snapshots.get(2, {}).get('account_key') not in (old, None)))
+                self.assertEqual(fetch.call_count, 3)
+                write_workbuddy_marker(marker, 'cello')
+                QTest.qWait(350)
+                self.assertEqual(fetch.call_count, 3)
+
+                checks.reset_mock()
+                (marker.parent / 'unrelated.txt').touch()
+                QTest.qWait(2500)
+                self.assertEqual(checks.call_count, 0)
+                self.assertEqual(fetch.call_count, 3)
+                self.assertEqual(live.poll.interval(), 300_000)
+
+                live.set_source_visible(2, False)
+                checks.reset_mock()
+                write_workbuddy_marker(marker, 'delta')
+                QTest.qWait(350)
+                self.assertEqual(checks.call_count, 0)
+                self.assertEqual(fetch.call_count, 3)
+                live.set_source_visible(2, True)
+                self.assertTrue(wait_until(lambda: live.snapshots.get(2, {}).get('account_key') == current().key))
+                self.assertEqual(fetch.call_count, 4)
+            finally:
+                live.workbuddy_watch.stop()
+                live.close()
+                live.deleteLater()
+
+    def test_workbuddy_switch_failure_has_only_one_retry(self):
+        station = self.station
+        station.offline = False
+        station.visible_sources = [2]
+        station.workbuddy_retry.setInterval(50)
+        account = quota_app.workbuddy.Account('second', 'Sample')
+        with patch.object(quota_app.workbuddy, 'current_account', return_value=account), \
+             patch.object(quota_app.workbuddy, 'fetch', side_effect=RuntimeError('not ready')) as fetch:
+            try:
+                station.workbuddy_file_changed()
+                self.assertTrue(wait_until(lambda: fetch.call_count == 2 and 2 not in station.busy))
+                QTest.qWait(250)
+                self.assertEqual(fetch.call_count, 2)
+                self.assertFalse(station.workbuddy_retry.isActive())
+            finally:
+                station.offline = True
+
+    def test_workbuddy_cold_start_retries_an_unready_client_once(self):
+        profile = Path(self.temporary.name) / 'workbuddy'
+        quota_app.atomic_json(quota_app.STATE / 'settings.json', {'language': 'zh-CN', 'visible_sources': [2]})
+        with patch.dict(os.environ, WORKBUDDY_HOME=str(profile), QUOTA_STATION_DATA_DIR=self.temporary.name), \
+             patch.object(quota_app.Station, 'refresh_sources'):
+            write_workbuddy_marker(quota_app.workbuddy.account_snapshot_path(), 'alpha')
+            account = quota_app.workbuddy.current_account()
+            balance = dict(snapshot(2, 42), source='workbuddy', account_key=account.key)
+            with patch.object(quota_app.workbuddy, 'fetch', side_effect=[RuntimeError('client loading'), balance]) as fetch:
+                live = quota_app.Station()
+                live.workbuddy_retry.setInterval(50)
+                live.updater.auto_timer.stop()
+                try:
+                    self.assertTrue(wait_until(lambda: live.snapshots.get(2) == balance))
+                    self.assertEqual(fetch.call_count, 2)
+                    self.assertFalse(live.workbuddy_retry.isActive())
+                finally:
+                    live.workbuddy_watch.stop()
+                    live.close()
+                    live.deleteLater()
+
+    def test_workbuddy_startup_drops_old_cache_before_first_render(self):
+        a = quota_app.workbuddy.Account('current', 'Sample')
+        cache = quota_app.STATE / 'balances.json'
+        for old in (snapshot(2, 55), dict(snapshot(2, 60), source='workbuddy', account_key='previous')):
+            quota_app.atomic_json(cache, {'1': snapshot(1, 9), '2': old})
+            with patch.dict(os.environ, WORKBUDDY_HOME=self.temporary.name, QUOTA_STATION_DATA_DIR=self.temporary.name), \
+                 patch.object(quota_app.workbuddy, 'current_account', return_value=a), \
+                 patch.object(quota_app.QTimer, 'singleShot'):
+                other = quota_app.Station()
+                other.updater.auto_timer.stop()
+            try:
+                self.assertNotIn(2, other.snapshots)
+                self.assertNotIn('2', quota_app.read_json(cache, {}))
+                self.assertEqual(other.snapshots[1]['balance'], 9)
+            finally:
+                other.close()
+                other.deleteLater()
 
     def double_click(self, delay):
         mini = self.station.mini

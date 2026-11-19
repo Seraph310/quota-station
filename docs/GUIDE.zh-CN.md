@@ -118,7 +118,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -DesktopShortc
 | Codex | 已安装并通过 ChatGPT 账号登录的 Codex CLI，使用 `account/rateLimits/read`；不创建模型任务。仅有桌面 App 不一定包含可调用的 CLI。 |
 | 新版 Qoder App | 优先复用当前 Windows 用户的独立 App 登录，已适配 0.4.3。只读解密本机登录，在内存中向客户端使用的 `GET /sash/api/v2/me/usage` 查询；无需启动旧 IDE，也无需 Node.js。登录过期时打开新版 Qoder 更新登录。 |
 | 旧 Qoder 环境 | 无新版 App 配置时，支持官方 SDK 的 `getUsageInfo()`，再回退到正在运行且已登录的国际版 Qoder IDE 本地 `credit/usage`。此路径需要 Node.js。 |
-| WorkBuddy | 同一 Windows 用户已有 WorkBuddy 登录。优先读取已有加密缓存；必要时只读访问 WorkBuddy 服务进程内存获取登录令牌，再向其计费接口查询。新用户无需安装旧积分球。 |
+| WorkBuddy | 保持桌面客户端运行并登录。勾选此来源时，Windows 会在账号文件变化时通知小站。切号后小站清除旧积分，读取新账号菜单中的「积分余额」，等待期间显示 **—**。常规额度每五分钟刷新，取消勾选即停止监听。 |
 | Magpie | “一键同步”自动检测安装位置，通过 `magpie status --json` 读取当前网关端口，再查询本机 `/v1/magpie/quotas`；网关未运行时使用检测到的 `magpie.exe quota --json`。无需再次填写 API Key；登录与账号管理仍在 Magpie 中完成。特殊安装可用 `QUOTA_MAGPIE_EXECUTABLE` 或 `QUOTA_MAGPIE_PORT` 指定。 |
 
 Magpie 接入只查询额度，不修改路由、启用状态、自动重置、通知或 Credits 消费设置。窗口同时有百分比与用量总额时优先展示可用数量；货币保持原币种，负余额如实显示。描述性“Unknown”不会被当成 100% 可用。
@@ -141,7 +141,7 @@ $env:QUOTA_CODEX_EXECUTABLE = 'C:\path\to\codex.exe'
 ## 本地数据与兼容性
 
 - 项目不设账号中转服务器，本机直连查询发往各平台自身的服务，Magpie 来源通过它的本机接口或 CLI 读取。登录凭证不写入明文日志。
-- Qoder 登录文件只读，不修改或刷新原凭证。WorkBuddy 如需新增缓存，使用 Windows 数据保护 API（DPAPI）加密，保存在项目 `.cache` 中；不修改原缓存或进程，不请求调试提权。
+- Qoder 登录文件以只读方式打开。小站通过 Windows 辅助功能打开 WorkBuddy 账号菜单、刷新积分并收起自己打开的菜单。手动打开的菜单会保持展开。客户端已退出或菜单暂不可用时，同一账号可以显示上次确认的余额和更新时间。
 - `state/` 存本地设置、显示来源、账号显示名称和余额快照；`.cache/`、虚拟环境、真实验证结果和本机截图均排除在 Git 之外。请勿把这些目录一起公开打包。
 - 以上相对路径适用于源码运行。下载版保存到 Windows `%LOCALAPPDATA%\QuotaStation` 或 macOS `~/Library/Application Support/QuotaStation`，更新或移动程序会保留设置。安装包不包含真实账号、余额缓存和凭证。
 - 本项目是个人实践作品。客户端兼容接口可能随版本变化；企业专属用量页、非标准服务域名和其他平台系统尚未全面适配。它不承诺跨电脑即装即用，数值以各平台自身页面为准。

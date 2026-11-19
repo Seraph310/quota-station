@@ -7,6 +7,12 @@ sys.path.insert(0, str(root))
 from version import __version__
 
 mac = sys.platform == 'darwin'
+windows_imports = []
+if sys.platform == 'win32':
+    import os
+    from comtypes.client import GetModule
+    accessibility = GetModule(str(Path(os.environ['SystemRoot']) / 'System32/oleacc.dll'))
+    windows_imports.append(accessibility.__name__)
 assets = root / 'build' / 'assets'
 datas = [(str(path), 'providers/qoder_runtime')
          for path in (root / 'providers/qoder_runtime').glob('*.mjs')]
@@ -14,7 +20,7 @@ datas.append((str(assets / 'licenses'), 'licenses'))
 datas.append((str(root / 'updater_shortcut.ps1'), '.'))
 analysis = Analysis(
     [str(root / 'launcher.py')], pathex=[str(root)], binaries=[], datas=datas,
-    hiddenimports=['providers.' + name for name in
+    hiddenimports=windows_imports + ['providers.' + name for name in
                    ('codex_provider', 'qoder_provider', 'workbuddy_provider', 'magpie_provider')],
     hookspath=[], hooksconfig={}, runtime_hooks=[],
     excludes=['tkinter', 'pytest', 'tests'], noarchive=False,

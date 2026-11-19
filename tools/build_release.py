@@ -64,10 +64,14 @@ def prepare_assets():
         'PySide6/Qt source and LGPL information: https://code.qt.io/ and https://www.qt.io/licensing/open-source-lgpl-obligations\n'
         'cryptography: https://github.com/pyca/cryptography\n'
         'certifi (MPL-2.0): https://github.com/certifi/python-certifi\n'
+        'comtypes (Windows, MIT): https://github.com/enthought/comtypes\n'
         'PyInstaller bootloader exception: https://pyinstaller.org/en/stable/license.html\n'
         'Libraries are dynamically loaded from the distributed app folder; replacement libraries must be ABI-compatible.\n',
         encoding='utf-8')
-    for name in ('PySide6', 'PySide6_Essentials', 'PySide6_Addons', 'shiboken6', 'cryptography', 'certifi', 'pyinstaller'):
+    packages = ['PySide6', 'PySide6_Essentials', 'PySide6_Addons', 'shiboken6', 'cryptography', 'certifi', 'pyinstaller']
+    if sys.platform == 'win32':
+        packages.append('comtypes')
+    for name in packages:
         distribution = importlib.metadata.distribution(name)
         for relative in distribution.files or []:
             if '..' in relative.parts:

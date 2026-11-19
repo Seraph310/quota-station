@@ -1,177 +1,113 @@
-"""Synthetic, offline tests: no real account values or credentials in fixtures."""
-
-from __future__ import annotations
-
-import base64
+"""Synthetic WorkBuddy profiles and accessibility controls."""
 import json
-import os
-import time
+from pathlib import Path
+import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
-import urllib.error
+from unittest.mock import Mock, patch
 
 from providers import workbuddy_provider as provider
 from providers import _workbuddy_windows as windows
 
 
-def summary(*values):
-    return {"code": 0, "data": {"Packages": [{"CycleRemainCapacity": value} for value in values]}}
+class WorkBuddyTests(unittest.TestCase):
+    def test_active_selector_not_newest_directory_or_nickname(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', WORKBUDDY_HOME=tmp):
+            root = Path(tmp)
+            path = root / 'storage/skeleton/account-snapshot.json'
+            path.parent.mkdir(parents=True)
+            (root / 'storage/user-unrelated-personal').mkdir()
+            def select(uid, team=''):
+                path.write_text(json.dumps({'primary': {'uid': uid, 'type': 'personal',
+                    'enterpriseId': team, 'nickname': 'Shared name'}}), 'utf-8')
+                return provider.current_account()
+            a = select('first')
+            self.assertNotEqual(a.key, select('second').key)
+            self.assertNotEqual(a.key, select('first', 'team').key)
+            self.assertEqual(a, select('first'))
+            self.assertNotIn('first', a.key)
+            for raw in ('{}', 'null', '{"primary":null}', '{', ' ' * 4097):
+                path.write_text(raw, 'utf-8')
+                self.assertIsNone(provider.current_account())
+            path.unlink()
+            self.assertIsNone(provider.current_account())
 
-
-class SummaryTests(unittest.TestCase):
-    def test_sums_verified_numeric_values(self):
-        self.assertEqual(provider._parse_summary(summary("1.25", 2.5, 0)), (3.75, 3))
-
-    def test_explicit_zero_is_zero(self):
-        self.assertEqual(provider._parse_summary(summary(0, "0")), (0.0, 2))
-
-    def test_packages_shape_validation(self):
-        for data in (None, [], {}, {"Packages": None}, {"Packages": {}}, {"Packages": []}, {"Packages": ""}):
-            with self.subTest(data=data), self.assertRaises(RuntimeError):
-                provider._parse_summary({"code": 0, "data": data})
-
-    def test_one_bad_package_rejects_whole_total(self):
-        for value in (None, True, False, "", "unknown", "NaN", "Infinity", float("inf"), -1, "-0.5", [], {}):
+    def test_zero_decimals_unlimited_and_unavailable(self):
+        self.assertEqual(provider.parse_amount('0'), (0, 'available'))
+        self.assertEqual(provider.parse_amount('28,710.23'), (28710.23, 'available'))
+        self.assertEqual(provider.parse_amount('Unlimited'), (None, 'unlimited'))
+        for value in ('—', '…', 'N/A', 'NaN', '-5', '99,2', '0%', '买 500 积分'):
             with self.subTest(value=value), self.assertRaises(RuntimeError):
-                provider._parse_summary(summary(20, value))
-        for package in (None, 4, {}, []):
-            with self.subTest(package=package), self.assertRaises(RuntimeError):
-                provider._parse_summary({"code": 0, "data": {"Packages": [package]}})
+                provider.parse_amount(value)
 
-    def test_raw_server_message_not_exposed(self):
-        for payload in ({"code": 1, "msg": "SENSITIVE_VALUE"}, {"code": False}, [], None):
-            with self.subTest(payload=payload):
-                with self.assertRaises(RuntimeError) as caught:
-                    provider._parse_summary(payload)
-                self.assertNotIn("SENSITIVE_VALUE", str(caught.exception))
+    def test_switch_during_read_drops_the_result(self):
+        a, b = provider.Account('first', 'A'), provider.Account('second', 'B')
+        with patch.object(provider, 'current_account', side_effect=[a, b]), \
+             patch.object(provider.os, 'name', 'nt'), patch.object(windows, 'read_balance', return_value='812.4'):
+            with self.assertRaisesRegex(RuntimeError, '账号已切换'):
+                provider.fetch()
 
-
-class FetchTests(unittest.TestCase):
-    def test_legacy_cache_preferred_and_never_written(self):
-        with patch.object(windows, "read_cached_token", return_value="synthetic") as read, \
-             patch.object(windows, "write_cached_token") as write, \
-             patch.object(windows, "find_running_token") as process, \
-             patch.object(provider, "_request_summary", return_value=summary(42)) as request:
+    def test_fetch_attaches_the_current_account_to_the_balance(self):
+        a = provider.Account('first', 'A')
+        with patch.object(provider, 'current_account', return_value=a), \
+             patch.object(provider.os, 'name', 'nt'), patch.object(windows, 'read_balance', return_value='0'):
             result = provider.fetch()
-        read.assert_called_once_with(provider.LEGACY_CACHE)
-        write.assert_not_called()
-        process.assert_not_called()
-        request.assert_called_once_with("synthetic")
-        self.assertEqual(result["balance"], 42.0)
-        self.assertEqual(result["name"], "WorkBuddy")
-        self.assertIsNone(result["reset_at"])
-        self.assertGreater(result["updated_at"], 0)
-        self.assertTrue(all(set(item) == {"label", "value"} for item in result["details"]))
-
-    def test_project_cache_can_be_reused_without_running_client(self):
-        with patch.object(windows, "read_cached_token", side_effect=[None, "synthetic"]) as read:
-            self.assertEqual(provider._cached_token(), "synthetic")
-        self.assertEqual([call.args[0] for call in read.call_args_list], [provider.LEGACY_CACHE, provider.PROJECT_CACHE])
-
-    def test_no_credential_makes_no_network_request(self):
-        with patch.object(provider, "_cached_token", return_value=None), \
-             patch.object(windows, "find_running_token", return_value=None) as process, \
-             patch.object(provider, "_request_summary") as request:
-            with self.assertRaisesRegex(RuntimeError, "请先打开 WorkBuddy"):
-                provider.fetch()
-        process.assert_called_once()
-        request.assert_not_called()
-
-    def test_process_credential_cached_only_after_valid_response(self):
-        with patch.object(provider, "_cached_token", return_value=None), \
-             patch.object(windows, "find_running_token", return_value="synthetic"), \
-             patch.object(provider, "_request_summary", return_value=summary(12)), \
-             patch.object(windows, "write_cached_token") as write:
-            provider.fetch()
-        write.assert_called_once_with(provider.PROJECT_CACHE, "synthetic")
-        self.assertTrue(provider.PROJECT_CACHE.is_relative_to(provider.PROJECT_ROOT))
-        self.assertNotEqual(provider.PROJECT_CACHE, provider.LEGACY_CACHE)
-
-    def test_invalid_response_does_not_cache_process_credential(self):
-        with patch.object(provider, "_cached_token", return_value=None), \
-             patch.object(windows, "find_running_token", return_value="synthetic"), \
-             patch.object(provider, "_request_summary", return_value=summary()), \
-             patch.object(windows, "write_cached_token") as write:
-            with self.assertRaises(RuntimeError):
-                provider.fetch()
-        write.assert_not_called()
-
-    def test_auth_recovery_is_bounded_to_one_new_credential(self):
-        with patch.object(provider, "_cached_token", return_value="old"), \
-             patch.object(windows, "find_running_token", return_value="new") as process, \
-             patch.object(provider, "_request_summary", side_effect=[provider._AuthError("失效"), summary(8)]) as request, \
-             patch.object(windows, "write_cached_token") as write:
-            self.assertEqual(provider.fetch()["balance"], 8.0)
-        self.assertEqual(request.call_count, 2)
-        process.assert_called_once()
-        write.assert_called_once_with(provider.PROJECT_CACHE, "new")
-
-    def test_same_failed_credential_not_retried(self):
-        with patch.object(provider, "_cached_token", return_value="same"), \
-             patch.object(windows, "find_running_token", return_value="same"), \
-             patch.object(provider, "_request_summary", side_effect=provider._AuthError("失效")) as request:
-            with self.assertRaises(RuntimeError):
-                provider.fetch()
-        request.assert_called_once()
-
-    def test_network_failure_does_not_trigger_process_scan(self):
-        with patch.object(provider, "_cached_token", return_value="synthetic"), \
-             patch.object(windows, "find_running_token") as process, \
-             patch.object(provider, "_request_summary", side_effect=RuntimeError("网络错误")) as request:
-            with self.assertRaisesRegex(RuntimeError, "网络错误"):
-                provider.fetch()
-        request.assert_called_once()
-        process.assert_not_called()
+        self.assertEqual((result['account_key'], result['balance'], result['source']), ('first', 0, 'workbuddy'))
 
 
-class RequestTests(unittest.TestCase):
-    def test_request_uses_installed_version_and_summary_only(self):
-        response = MagicMock()
-        response.read.return_value = json.dumps(summary(1)).encode("utf-8")
-        opener = MagicMock()
-        opener.open.return_value.__enter__.return_value = response
-        with patch.object(windows, "executable_version", return_value="5.6.2"), \
-             patch.object(provider.urllib.request, "build_opener", return_value=opener):
-            self.assertEqual(provider._request_summary("synthetic")["code"], 0)
-        request = opener.open.call_args.args[0]
-        self.assertEqual(request.full_url, provider.SUMMARY_URL)
-        self.assertEqual(request.get_method(), "POST")
-        self.assertEqual(request.data, b"{}")
-        self.assertEqual(request.get_header("X-ide-version"), "5.6.2")
-        self.assertEqual(opener.open.call_args.kwargs["timeout"], 15)
+class Node:
+    def __init__(self, role, name='', children=(), action=None):
+        self.role, self.name = role, name
+        self.items = list(children)
+        self.activate = Mock(side_effect=action)
 
-    def test_network_error_detail_not_exposed(self):
-        opener = MagicMock()
-        opener.open.side_effect = urllib.error.URLError("SENSITIVE_VALUE")
-        with patch.object(windows, "executable_version", return_value=None), \
-             patch.object(provider.urllib.request, "build_opener", return_value=opener):
-            with self.assertRaises(RuntimeError) as caught:
-                provider._request_summary("synthetic")
-        self.assertNotIn("SENSITIVE_VALUE", str(caught.exception))
-
-    def test_redirect_cannot_forward_credential(self):
-        with self.assertRaises(RuntimeError):
-            provider._NoRedirect().redirect_request(None, None, 302, "", {}, "https://example.invalid")
+    def children(self):
+        return self.items
 
 
-class WindowsHelperTests(unittest.TestCase):
-    def test_jwt_checks_expiry_and_account_audience(self):
-        def token(payload):
-            data = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
-            return f"synthetic.{data}.synthetic"
-        self.assertTrue(windows.valid_token(token({"aud": "account", "exp": time.time() + 3600})))
-        self.assertFalse(windows.valid_token(token({"aud": "account", "exp": 1})))
-        self.assertFalse(windows.valid_token(token({"aud": "other", "exp": time.time() + 3600})))
-        self.assertFalse(windows.valid_token("invalid"))
+class MenuTests(unittest.TestCase):
+    def setUp(self):
+        self.account = provider.Account('first', 'Sample')
+        self.refresh = Node(windows.BUTTON, '刷新')
+        self.cell = Node(windows.BUTTON, '积分余额 2,315.23 刷新 购买积分', [self.refresh])
+        self.popup = Node(windows.MENU_POPUP, children=[Node(windows.TEXT, 'Sample'), self.cell])
+        self.trigger = Node(windows.MENU_BUTTON, 'Sample Sample', action=self.toggle)
+        self.anchor = Node(20, children=[self.trigger])
+        acc = patch.object(windows, 'current_account', return_value=self.account)
+        acc.start()
+        self.addCleanup(acc.stop)
+        sleep = patch.object(windows.time, 'sleep')
+        sleep.start()
+        self.addCleanup(sleep.stop)
 
-    @unittest.skipUnless(os.name == "nt", "Windows DPAPI only")
-    def test_dpapi_roundtrip_with_synthetic_data(self):
-        original = b"synthetic-not-a-real-credential"
-        encrypted = windows._dpapi(original, encrypt=True)
-        self.assertIsInstance(encrypted, bytes)
-        self.assertNotIn(original, encrypted)
-        self.assertEqual(windows._dpapi(encrypted, encrypt=False), original)
+    def toggle(self):
+        self.anchor.items = [self.trigger] if self.popup in self.anchor.items else [self.trigger, self.popup]
 
+    def read(self):
+        return windows._read_menu(self.anchor, self.trigger, self.account)
 
-if __name__ == "__main__":
-    unittest.main()
+    def test_closed_menu_is_opened_for_new_usage_and_restored(self):
+        self.assertEqual(self.read(), '2,315.23')
+        self.refresh.activate.assert_not_called()
+        self.assertEqual(self.anchor.items, [self.trigger])
+
+    def test_user_opened_menu_stays_open(self):
+        self.toggle()
+        self.assertEqual(self.read(), '2,315.23')
+        self.trigger.activate.assert_not_called()
+        self.refresh.activate.assert_called_once()
+
+    def test_wrong_profile_stale_and_unloaded_rows_are_ignored(self):
+        for profile, name in [('Other', '积分余额 15 刷新'), ('Sample', '积分余额 15 非最新 刷新'),
+                              ('Sample', '积分余额 获取失败 购买积分')]:
+            self.popup.items[0].name = profile
+            self.cell.name = name
+            with self.subTest(name=name), patch.object(windows.time, 'monotonic', side_effect=[0, 1, 2, 10]):
+                with self.assertRaisesRegex(RuntimeError, '尚未显示'):
+                    self.read()
+            self.assertEqual(self.anchor.items, [self.trigger])
+
+    def test_unknown_panel_is_restored_and_invite_amount_is_ignored(self):
+        self.popup.items[1] = Node(windows.BUTTON, '去邀约 最高得 650 积分/人')
+        with patch.object(windows.time, 'monotonic', side_effect=[0, 1, 10]), self.assertRaises(RuntimeError):
+            self.read()
+        self.assertEqual(self.anchor.items, [self.trigger])

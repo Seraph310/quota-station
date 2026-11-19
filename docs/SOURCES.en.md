@@ -24,9 +24,9 @@ The available total includes the usable plan, add-ons, organization allocation a
 
 ## WorkBuddy · Windows
 
-Sign in as the same Windows user. The adapter first tries its existing encrypted token cache. When needed, it reads the local WorkBuddy service process to recover the sign-in token, then queries WorkBuddy’s billing service. New token caches use Windows DPAPI. It does not modify the source process or request debug elevation. An older quota widget is not required.
+Keep WorkBuddy desktop running and signed in. While this source is selected, Windows notifies Quota Station when the active account file changes. Switching accounts clears the previous balance and starts a fresh lookup. The card shows **—** until the new balance arrives. The regular balance refresh runs every five minutes. Deselecting WorkBuddy stops the file watch.
 
-The displayed value is the sum of remaining points in the current cycle of the returned resource packages.
+Quota Station uses Windows accessibility to open the account menu, refresh **Credits Balance**, and close a menu it opened. An already open account menu stays open. If WorkBuddy is closed or its menu is unavailable, the card can show the last confirmed balance for the same account with its original timestamp.
 
 ## Magpie · Windows and macOS
 

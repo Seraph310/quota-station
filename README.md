@@ -56,7 +56,7 @@ The Mac packages are built and tested on macOS 15. Windows packages are unsigned
 | --- | :---: | :---: | --- |
 | Codex | ✓ | ✓ | Codex CLI installed and signed in with a ChatGPT account |
 | Qoder | ✓ | — | A signed-in Qoder App; legacy SDK/IDE fallback is also available |
-| WorkBuddy | ✓ | — | WorkBuddy signed in as the same Windows user |
+| WorkBuddy | ✓ | — | WorkBuddy desktop running and signed in. Follows account switches automatically |
 | Magpie accounts & API balances | ✓ | ✓ | A local Magpie installation with accounts already connected |
 
 Magpie supplies the providers it has connected; Quota Station does not independently support every upstream provider. Native Qoder and WorkBuddy sign-in reading is currently Windows-only. Provider interfaces can change, and the upstream account page remains the source of truth. See [connection details](docs/SOURCES.en.md).
@@ -83,7 +83,7 @@ Quotas refresh every five minutes. Release checks happen silently once a day; in
 
 Quota Station has no account relay server and no analytics. Native quota queries go to the respective providers; Magpie quotas come from its local gateway or CLI. Update checks and downloads contact this GitHub repository.
 
-Your display preferences and cached balances stay on your computer. Local sign-in credentials are used to query the relevant provider and are never included in releases or public demo assets. WorkBuddy may read its local service process to recover a sign-in token when its encrypted cache is unavailable; any new token cache is protected with Windows DPAPI. The [connection guide](docs/SOURCES.en.md) explains these paths.
+Your display preferences and cached balances stay on your computer. For WorkBuddy, Quota Station reads the active account marker and the credit balance in the desktop client's account menu using Windows accessibility. See the [connection guide](docs/SOURCES.en.md).
 
 | Run mode | Settings and cache directory |
 | --- | --- |

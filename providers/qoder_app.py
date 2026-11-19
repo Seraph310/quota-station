@@ -16,7 +16,7 @@ import time
 import urllib.error
 import urllib.request
 
-from ._workbuddy_windows import _dpapi
+from ._windows_dpapi import _dpapi
 
 _ENDPOINT = "https://openapi.qoder.sh/sash/api/v2/me/usage"
 _LOGIN_ERROR = "请打开新版 Qoder 并确认已登录，然后刷新额度。"
