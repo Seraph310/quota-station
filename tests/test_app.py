@@ -181,16 +181,10 @@ class AppInteractionTests(unittest.TestCase):
                     write_workbuddy_marker(marker, uid, replace=replace)
                     self.assertTrue(wait_until(lambda: live.snapshots.get(2, {}).get('account_key') not in (old, None)))
                 self.assertEqual(fetch.call_count, 3)
+                checks_before_rewrite = checks.call_count
                 write_workbuddy_marker(marker, 'cello')
-                QTest.qWait(350)
+                self.assertTrue(wait_until(lambda: checks.call_count > checks_before_rewrite))
                 self.assertEqual(fetch.call_count, 3)
-
-                checks.reset_mock()
-                (marker.parent / 'unrelated.txt').touch()
-                QTest.qWait(2500)
-                self.assertEqual(checks.call_count, 0)
-                self.assertEqual(fetch.call_count, 3)
-                self.assertEqual(live.poll.interval(), 300_000)
 
                 live.set_source_visible(2, False)
                 checks.reset_mock()
@@ -201,6 +195,15 @@ class AppInteractionTests(unittest.TestCase):
                 live.set_source_visible(2, True)
                 self.assertTrue(wait_until(lambda: live.snapshots.get(2, {}).get('account_key') == current().key))
                 self.assertEqual(fetch.call_count, 4)
+
+                # The marker predates this subscription. Earlier marker notifications
+                # belong to the previous watch, outside the idle measurement.
+                checks.reset_mock()
+                (marker.parent / 'unrelated.txt').touch()
+                QTest.qWait(2500)
+                self.assertEqual(checks.call_count, 0)
+                self.assertEqual(fetch.call_count, 4)
+                self.assertEqual(live.poll.interval(), 300_000)
             finally:
                 live.workbuddy_watch.stop()
                 live.close()
