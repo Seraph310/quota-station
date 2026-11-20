@@ -27,6 +27,7 @@ from edge_dock import EdgeDock, nearest_screen
 from updater_ui import UpdateController
 from runtime_paths import data_root, native_source_keys, resource_root
 from providers import workbuddy_provider as workbuddy
+from providers import antigravity_provider as antigravity
 from workbuddy_watch import WorkBuddyAccountWatch
 from version import __version__
 import i18n
@@ -34,8 +35,8 @@ from i18n import tr, pair
 
 BASE = resource_root()
 STATE = data_root() / 'state'
-NAMES = ['Codex', 'Qoder', 'WorkBuddy']
-COLORS = ['#458068', '#8170a7', '#ad7a44']
+NAMES = ['Codex', 'Qoder', 'WorkBuddy', 'Antigravity']
+COLORS = ['#458068', '#8170a7', '#ad7a44', '#5677ad']
 PAPER, TEXT, MUTED, LINE, SOFT = '#fcfdfb', '#303532', '#687265', '#e3e8df', '#f0f3ee'
 
 
@@ -56,6 +57,7 @@ def atomic_json(path: Path, data):
 def validate_snapshot(data):
     if not isinstance(data, dict):
         raise ValueError('额度返回格式不正确')
+    data = antigravity.display_snapshot(data)
     if data.get('source') in ('magpie', 'workbuddy') and data.get('quota_state') == 'unlimited' and data.get('balance') is None:
         return data
     value = data.get('balance')
@@ -68,7 +70,7 @@ def validate_snapshot(data):
 
 
 def number_text(data):
-    if not data:
+    if not data or data.get('balance') is None and data.get('quota_state') != 'unlimited':
         return '—'
     if data.get('quota_state') == 'unlimited':
         return tr('不限量')
@@ -102,6 +104,41 @@ def label(text='', size=12, color=TEXT, bold=False):
     return item
 
 
+class WeeklyQuotas(QWidget):
+    """Two aligned weekly readings, kept separate at every card size."""
+    def __init__(self):
+        super().__init__()
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setStyleSheet('background:transparent;border:0;')
+        box = QVBoxLayout(self)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(0)
+        self.readings = []
+        for model in antigravity.WEEKLY_MODELS:
+            row = QHBoxLayout()
+            row.setSpacing(4)
+            name, value = label(model), label('—', bold=True)
+            row.addWidget(name)
+            row.addStretch()
+            row.addWidget(value)
+            box.addLayout(row)
+            self.readings.append((name, value))
+        self.hide()
+
+    def sync(self, quotas, scale=1.0, compact=False):
+        self.setVisible(bool(quotas))
+        for (name, value), item in zip(self.readings, quotas):
+            name.setStyleSheet(f'color:{MUTED};font-size:{round((11 if compact else 13) * scale)}px;background:transparent;border:0;')
+            value.setStyleSheet(f'color:{TEXT};font-size:{round((15 if compact else 18) * scale)}px;font-weight:600;background:transparent;border:0;')
+            value.setText(number_text(item))
+        if quotas:
+            for pair in self.readings:
+                for field in pair:
+                    field.ensurePolished()
+            self.setFixedHeight(sum(max(name.sizeHint().height(), value.sizeHint().height())
+                                    for name, value in self.readings))
+
+
 def setup_fonts(app):
     # Explicitly register installed fonts so development/offscreen rendering also
     # works when the Windows font service is unavailable to the test process.
@@ -122,7 +159,7 @@ def icon(size=128):
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(QColor(PAPER))
     p.drawRoundedRect(QRectF(6, 6, 116, 116), 30, 30)
-    for i, color in enumerate(COLORS):
+    for i, color in enumerate(COLORS[:3]):
         p.setBrush(QColor(color))
         p.drawRoundedRect(QRectF(30, 32 + i * 24, 68 - i * 14, 10), 5, 5)
     p.end()
@@ -228,10 +265,12 @@ class MiniButton(QPushButton):
         box.setSpacing(3)
         self.name = label('● Codex', 12)
         self.value = label('—', 29, bold=True)
+        self.weekly = WeeklyQuotas()
         self.unit = label('正在连接', 11, MUTED)
         self.dots = label('● · ·', 11, COLORS[0])
-        for item in (self.name, self.value, self.unit, self.dots):
-            item.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        for item in (self.name, self.value, self.weekly, self.unit, self.dots):
+            if isinstance(item, QLabel):
+                item.setAlignment(Qt.AlignmentFlag.AlignCenter)
             box.addWidget(item)
         self.resize_grip = ResizeGrip(self)
         self.page_turn = PageTurn(self)
@@ -372,9 +411,10 @@ class Station(QWidget):
         for source in saved_sources if isinstance(saved_sources, list) else []:
             if isinstance(source, dict) and isinstance(source.get('id'), str) and source['id'].startswith('magpie:') and source.get('origin') == 'Magpie' and isinstance(source.get('name'), str):
                 self.sources[source['id']] = source
-        chosen = settings.get('visible_sources', native_keys)
+        default_keys = [key for key in native_keys if key != 3]
+        chosen = settings.get('visible_sources', default_keys)
         self.visible_sources = []
-        for key in chosen if isinstance(chosen, list) else native_keys:
+        for key in chosen if isinstance(chosen, list) else default_keys:
             if isinstance(key, (int, str)) and not isinstance(key, bool) and key in self.sources and key not in self.visible_sources:
                 self.visible_sources.append(key)
         self.active = 0  # Launch with the first selected source; collapse preserves selection.
@@ -412,7 +452,7 @@ class Station(QWidget):
                     pass
         for key, value in cached_balances.items() if isinstance(cached_balances, dict) else []:
             try:
-                source_key = int(key) if key in ('0', '1', '2') else key
+                source_key = int(key) if key in ('0', '1', '2', '3') else key
                 if source_key in self.sources:
                     self.snapshots[source_key] = validate_snapshot(value)
             except (ValueError, TypeError, KeyError):
@@ -627,6 +667,8 @@ class Station(QWidget):
             value = label('—', 20, bold=True)
             top.addWidget(value)
             layout.addLayout(top)
+            row.weekly = WeeklyQuotas()
+            layout.addWidget(row.weekly)
             if meta['origin'] == 'Magpie':
                 identity = label(meta.get('account') or 'Magpie', 10, MUTED)
                 identity.setWordWrap(True)
@@ -663,29 +705,43 @@ class Station(QWidget):
 
     def fit_rows(self):
         content = self.row_scroll.widget()
+        for row, *_ in self.rows:
+            row.layout().invalidate()
+            row.layout().activate()
+            row.updateGeometry()
+        content.layout().invalidate()
         content.layout().activate()
         area = (QApplication.screenAt(self.frameGeometry().center()) or QApplication.primaryScreen()).availableGeometry()
         self.row_scroll.setFixedHeight(min(max(60, content.sizeHint().height()), max(100, min(450, area.height() - 200))))
 
+    def showing_cached_quota(self, key):
+        return (self.errors.get(key) == antigravity.OFFLINE_MESSAGE
+                and self.snapshots.get(key, {}).get('source') == 'antigravity')
+
     def render(self):
         key = self.active_key
         data = self.snapshots.get(key)
+        weekly = antigravity.weekly_quotas(data)
         name, color = self.source_name(key), self.source_color(key)
         scale = self.mini_scale
         px = lambda value: max(1, round(value * scale))
-        radius = px(62 if self.shape == 'ball' else 29)
+        radius = px(124) // 2 if self.shape == 'ball' else px(29)
         self.mini.setFixedSize(px(124 if self.shape == 'ball' else 138), px(124 if self.shape == 'ball' else 116))
-        self.mini.layout().setContentsMargins(px(8), px(11), px(8), px(10))
-        self.mini.layout().setSpacing(px(3))
+        self.mini.layout().setContentsMargins(px(12 if weekly else 8), px(8 if weekly else 11), px(12 if weekly else 8), px(8 if weekly else 10))
+        self.mini.layout().setSpacing(px(1 if weekly else 3))
         self.mini.resize_grip.setVisible(self.shape == 'card')
         self.mini.layout_resize_grip()
         self.mini.setStyleSheet(f'QPushButton{{background:{PAPER};border:1px solid {LINE};border-radius:{radius}px;}} QPushButton:focus{{border-color:#b1c9b8;}}')
         self.mini.name.setText('● ' + name)
         self.mini.name.setStyleSheet(f'color:{color};font-size:{px(12)}px;border:0;background:transparent;')
         self.mini.value.setText(number_text(data))
+        self.mini.value.setVisible(not weekly)
+        self.mini.weekly.sync(weekly, scale, compact=True)
         self.mini.value.setStyleSheet(f'color:{TEXT};font-size:{px(25 if len(number_text(data)) > 5 else 29)}px;font-weight:600;border:0;background:transparent;')
         unit = tr(data.get('subtitle', '剩余额度') if data else ('正在连接' if key in self.busy else '待连接'))
         self.mini.unit.setText(unit if key not in self.errors else tr('上次余额' if data else '待连接'))
+        if self.showing_cached_quota(key):
+            self.mini.unit.setText(tr('上次读数'))
         if key is None:
             self.mini.unit.setText(tr('选择显示来源'))
         self.mini.unit.setStyleSheet(f'color:{MUTED};font-size:{px(11)}px;border:0;background:transparent;')
@@ -693,15 +749,23 @@ class Station(QWidget):
         self.mini.dots.setText(' '.join('●' if i == self.active else '·' for i in range(count)) if count <= 6 else f'{self.active + 1} / {count}')
         self.mini.dots.setStyleSheet(f'color:{color};font-size:{px(11)}px;border:0;background:transparent;')
         click_hint = tr('左侧上一页 · 右侧下一页' if self.shape == 'card' else '单击切换')
-        self.mini.setAccessibleName(tr('{name} {unit} {value}，{hint}，双击展开', name=name, unit=unit, value=number_text(data), hint=click_hint))
+        reading = ' · '.join(f'{item["model"]} {number_text(item)}' for item in weekly) if weekly else number_text(data)
+        self.mini.setAccessibleName(tr('{name} {unit} {value}，{hint}，双击展开', name=name, unit=unit, value=reading, hint=click_hint))
         self.mini.setToolTip(self.details_text(key) + '\n\n' + click_hint + tr(' · 双击展开\n拖动调整位置 · 右键菜单 · Enter 展开 · 左右键切换'))
         for i, (row, value, left, right, progress) in zip(self.row_keys, self.rows):
             item = self.snapshots.get(i)
+            weekly = antigravity.weekly_quotas(item)
+            row.weekly.sync(weekly)
             value.setText(number_text(item))
+            value.setVisible(not weekly)
             left.setText(tr(item.get('subtitle', '剩余额度') if item else ('正在连接' if i in self.busy else '待连接')))
             if i in self.errors:
-                right.setText(tr('更新失败' if item else '待连接'))
-                left.setText(tr('上次余额' if item else '暂不可用'))
+                if self.showing_cached_quota(i):
+                    left.setText(tr('上次读数'))
+                    right.setText(age_text(item.get('updated_at')))
+                else:
+                    right.setText(tr('更新失败' if item else '待连接'))
+                    left.setText(tr('上次余额' if item else '暂不可用'))
             elif i in self.busy:
                 right.setText(tr('更新中…'))
             elif item:
@@ -710,15 +774,17 @@ class Station(QWidget):
             else:
                 right.setText('')
             percent = item.get('remaining_percent', item.get('balance') if item.get('unit') == '%' else None) if item else None
-            progress.setVisible(isinstance(percent, (int, float)))
+            progress.setVisible(not weekly and isinstance(percent, (int, float)))
             if isinstance(percent, (int, float)):
                 progress.setValue(round(percent * 10))
             row.setToolTip(self.details_text(i) + tr('\n右键查看详情'))
         refreshing = bool(self.busy or self.magpie_busy)
         self.refresh_button.setEnabled(not refreshing)
         self.refresh_button.setText(tr('更新中' if refreshing else '刷新'))
-        failed = any(key in self.errors for key in self.visible_sources)
-        self.last_updated.setText(tr('部分来源待连接' if failed else ('每 5 分钟自动更新' if count else '尚未选择来源')))
+        failed = any(key in self.errors and not self.showing_cached_quota(key) for key in self.visible_sources)
+        cached = any(self.showing_cached_quota(key) for key in self.visible_sources)
+        self.last_updated.setText(tr('部分来源待连接' if failed else '部分来源显示上次读数' if cached else
+                                     '每 5 分钟自动更新' if count else '尚未选择来源'))
         for shape_key, button in self.shape_buttons.items():
             button.setChecked(shape_key == self.shape)
         self.tray.setToolTip((tr('额度小站') + '\n' + '\n'.join(f'{self.source_name(key)}  {number_text(self.snapshots.get(key))}' for key in self.visible_sources))[:120])
@@ -740,7 +806,8 @@ class Station(QWidget):
         if i in self.sources:
             lines.append(tr('来源：') + tr(self.sources[i]['origin']))
         if item:
-            lines.append(pair(tr(item.get('subtitle', '剩余额度')), number_text(item)) + (f' {tr(item.get("unit", ""))}' if item.get('unit') != '%' else ''))
+            if item.get('source') != 'antigravity':
+                lines.append(pair(tr(item.get('subtitle', '剩余额度')), number_text(item)) + (f' {tr(item.get("unit", ""))}' if item.get('unit') != '%' else ''))
             lines.append(tr('成功更新：') + time.strftime('%m-%d %H:%M:%S', time.localtime(item['updated_at'])))
             for detail in item.get('details', []):
                 if isinstance(detail, dict):
@@ -791,7 +858,7 @@ class Station(QWidget):
     def refresh_native(self, only=None):
         if self.offline:
             return
-        for i, module in enumerate(('codex_provider', 'qoder_provider', 'workbuddy_provider')):
+        for i, module in enumerate(('codex_provider', 'qoder_provider', 'workbuddy_provider', 'antigravity_provider')):
             if i not in self.visible_sources or (only is not None and i not in only):
                 continue
             if i == 2:
@@ -955,6 +1022,12 @@ class Station(QWidget):
 
     def receive(self, index, data, error, generation=0):
         self.busy.discard(index)
+        if index == 3 and error in (antigravity.NO_ACCOUNT_MESSAGE, antigravity.ACCOUNT_CHANGED_MESSAGE):
+            self.snapshots.pop(index, None)
+            try:
+                atomic_json(STATE / 'balances.json', self.snapshots)
+            except OSError:
+                pass
         if index == 2 and not self.offline:
             if 2 not in self.visible_sources:
                 self.render()

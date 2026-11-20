@@ -13,7 +13,7 @@ from version import __version__
 def run(application, destination):
     destination = Path(destination).resolve()
     destination.mkdir(parents=True, exist_ok=True)
-    modules = ['codex_provider', 'qoder_provider', 'workbuddy_provider', 'magpie_provider']
+    modules = ['codex_provider', 'qoder_provider', 'workbuddy_provider', 'antigravity_provider', 'magpie_provider']
     for name in modules:
         importlib.import_module('providers.' + name)
     bridge = station_app.BASE / 'providers/qoder_runtime/qoder_ide_bridge.mjs'
@@ -76,12 +76,31 @@ def run(application, destination):
             station.set_language('zh-CN')
             assert station.source_picker.done_button.text() == '完成'
             assert station.updater.dialog.action.text() in ('一键升级', '安装桌面版')
+            if 3 in station.sources:
+                from providers import antigravity_provider as antigravity
+                payload = {'response': {'groups': [
+                    {'displayName': 'Gemini Models', 'buckets': [{'window': 'weekly', 'remainingFraction': .42}]},
+                    {'displayName': 'Gemini 4 Argon', 'buckets': [{'window': 'weekly', 'remainingFraction': .8}]},
+                ]}}
+                station.set_source_visible(3, True)
+                station.receive(3, antigravity.normalize(payload, 'demo@example.test'), '')
+                station.active = station.visible_sources.index(3)
+                station_app.Station.render(station)
+                application.processEvents()
+                assert [v.text() for _, v in station.mini.weekly.readings] == ['42%', '80%']
+                assert station.mini.weekly.isVisible() and station.mini.value.isHidden()
+                assert station.grab().save(str(destination / 'antigravity-weekly.png'))
+                station.receive(3, None, antigravity.OFFLINE_MESSAGE)
+                station_app.Station.render(station)
+                application.processEvents()
+                assert station.mini.unit.text() == '上次读数'
+                assert station.grab().save(str(destination / 'antigravity-weekly-cached.png'))
             report = {'success': True, 'version': __version__, 'frozen': bool(getattr(sys, 'frozen', False)),
                       'platform': sys.platform, 'architecture': platform.machine(),
                       'native_sources': station_app.native_source_keys(), 'state_isolated': True,
                       'provider_imports': modules, 'visible_sources': len(station.visible_sources),
                       'edge_docking': ['left', 'right'], 'languages': ['zh-CN', 'en'],
-                      'live_language_switch': True}
+                      'live_language_switch': True, 'antigravity_weekly_pair': 3 in station.sources}
         finally:
             if station.source_picker:
                 station.source_picker.close()

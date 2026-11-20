@@ -1,33 +1,21 @@
 ## 简体中文
 
-**Windows 上的小站现在会跟随 WorkBuddy 切换账号。** 在「显示来源」里勾选 WorkBuddy 后，小站会读取桌面客户端账号菜单里的「积分余额」。
+**WorkBuddy 可以通过 Magpie 显示积分总余额。** 在「显示来源」中勾选 **Magpie** 下已连接的 WorkBuddy 账号，取消本机直连的 WorkBuddy。启动小站即可读取，每五分钟刷新，WorkBuddy 客户端可以保持关闭。
 
-- 切号时，Windows 会通知小站。卡片随即清除旧积分，显示 **—**，读到新账号的余额后再更新数字。
-- 平时每五分钟刷新一次余额。取消勾选 WorkBuddy 后，小站就停止监听账号切换。
+- 修正 WorkBuddy 余额选择，使用包含套餐积分和额外积分的 `Total credits`。
+- 详情保留各积分包及总余额，中文界面显示「额外积分」和「总积分」。
+- Windows 新增 Antigravity 本机来源，卡片分别显示 Gemini 和 Argon 周额度，详情保留各模型组额度。客户端关闭时标记「上次读数」并保留原时间。
+- 调整双额度卡片字号和展开面板行高，兼容中英文及卡片缩放。
 
-已有 v0.4.0 或更新版本的用户可以右键卡片或托盘图标，选择 **检查更新…**。首次安装请从本页下载对应的包。
-
-| 电脑 | 下载文件 | 打开方式 |
-| --- | --- | --- |
-| Windows 10/11 x64 | `QuotaStation-0.5.2-windows-x64.zip` | 完整解压后打开 `QuotaStation/QuotaStation.exe` |
-| Mac · Apple 芯片 | `QuotaStation-0.5.2-macos-arm64.dmg` | 打开 DMG，将小站拖入「应用程序」 |
-| Mac · Intel 芯片 | `QuotaStation-0.5.2-macos-x64.dmg` | 打开 DMG，将小站拖入「应用程序」 |
-
-Mac 版支持 Codex CLI 和 Magpie。首次打开的步骤见[下载说明](https://github.com/Seraph310/quota-station/blob/v0.5.2/docs/DOWNLOAD.md)。
+显示的账号以 Magpie 中所选的来源为准。已有版本可以通过右键菜单中的 **检查更新…** 升级。
 
 ## English
 
-**Quota Station on Windows now follows the active WorkBuddy account.** Select WorkBuddy in **Sources** to show the credit balance from the desktop client's account menu.
+**WorkBuddy balances are available through Magpie.** In **Sources**, select the connected WorkBuddy account under **Magpie** and deselect its native entry. Quota Station reads the balance on startup and refreshes every five minutes. WorkBuddy desktop can stay closed.
 
-- When you switch accounts, Windows notifies Quota Station. The card clears the old balance and shows **—** until the new account's credits arrive.
-- Balances refresh every five minutes. Deselecting WorkBuddy stops the account watch.
+- Fix WorkBuddy balance selection to use `Total credits`, which includes remaining plan and extra credits.
+- Keep each credit pool in the details, with translated labels for extra and total credits.
+- Add a native Antigravity source on Windows. The card shows Gemini and Argon weekly quotas separately; details retain all model groups. When the app closes, show **Last reading** with the original timestamp.
+- Refine the paired quota font size and expanded row spacing across both languages and card sizes.
 
-If you have v0.4.0 or later, right-click the card or tray icon and choose **Check for updates…**. For a first install, choose the package for your computer.
-
-| Computer | Download | Installation |
-| --- | --- | --- |
-| Windows 10/11 x64 | `QuotaStation-0.5.2-windows-x64.zip` | Extract the whole ZIP and open `QuotaStation/QuotaStation.exe` |
-| Mac with Apple silicon | `QuotaStation-0.5.2-macos-arm64.dmg` | Open the DMG and drag Quota Station into Applications |
-| Mac with Intel | `QuotaStation-0.5.2-macos-x64.dmg` | Open the DMG and drag Quota Station into Applications |
-
-On macOS, quota sources include Codex CLI and Magpie. For first-launch instructions, see the [download guide](https://github.com/Seraph310/quota-station/blob/v0.5.2/docs/DOWNLOAD.en.md).
+The displayed account follows the source selected in Magpie. Existing installations can upgrade through **Check for updates…** in the context menu.

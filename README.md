@@ -56,10 +56,12 @@ The Mac packages are built and tested on macOS 15. Windows packages are unsigned
 | --- | :---: | :---: | --- |
 | Codex | ✓ | ✓ | Codex CLI installed and signed in with a ChatGPT account |
 | Qoder | ✓ | — | A signed-in Qoder App; legacy SDK/IDE fallback is also available |
-| WorkBuddy | ✓ | — | WorkBuddy desktop running and signed in. Follows account switches automatically |
+| WorkBuddy via Magpie | ✓ | ✓ | WorkBuddy account already connected in Magpie. Shows total remaining credits; WorkBuddy desktop can stay closed |
+| WorkBuddy · native | ✓ | — | WorkBuddy desktop running and signed in. Follows account switches automatically |
+| Antigravity · native | ✓ | — | Official desktop app running and signed in. Shows Gemini and Argon weekly quotas; retains the last reading when closed |
 | Magpie accounts & API balances | ✓ | ✓ | A local Magpie installation with accounts already connected |
 
-Magpie supplies the providers it has connected; Quota Station does not independently support every upstream provider. Native Qoder and WorkBuddy sign-in reading is currently Windows-only. Provider interfaces can change, and the upstream account page remains the source of truth. See [connection details](docs/SOURCES.en.md).
+Magpie supplies the providers it has connected; Quota Station does not independently support every upstream provider. Native Qoder, WorkBuddy and Antigravity integrations are currently Windows-only. Provider interfaces can change, and the upstream account page remains the source of truth. See [connection details](docs/SOURCES.en.md).
 
 ## Small gestures, fewer interruptions
 
@@ -83,7 +85,7 @@ Quotas refresh every five minutes. Release checks happen silently once a day; in
 
 Quota Station has no account relay server and no analytics. Native quota queries go to the respective providers; Magpie quotas come from its local gateway or CLI. Update checks and downloads contact this GitHub repository.
 
-Your display preferences and cached balances stay on your computer. For WorkBuddy, Quota Station reads the active account marker and the credit balance in the desktop client's account menu using Windows accessibility. See the [connection guide](docs/SOURCES.en.md).
+Your display preferences and cached balances stay on your computer. Native WorkBuddy reads the active account marker and the credit balance in the desktop client's account menu using Windows accessibility. Antigravity reads quotas from the official desktop app's local service using its existing sign-in. See the [connection guide](docs/SOURCES.en.md).
 
 | Run mode | Settings and cache directory |
 | --- | --- |
@@ -118,6 +120,6 @@ Windows also has `install.ps1 -DesktopShortcut`. The optional legacy Qoder SDK n
 
 Created from a practical need: checking several AI quotas without interrupting work. Its behavior and visual design grew through everyday use, with Codex assisting implementation and testing. The [original Chinese case study](docs/case-study.md) records that process.
 
-Quota Station is an independent project, not an official client of OpenAI, Qoder, WorkBuddy, or Magpie.
+Quota Station is an independent project, not an official client of OpenAI, Qoder, WorkBuddy, Antigravity, or Magpie.
 
 **Available for noncommercial use under the [PolyForm Noncommercial License 1.0.0](LICENSE).** Commercial uses outside its permitted purposes require separate authorization from the copyright holder. See [NOTICE](NOTICE). Third-party components retain their own licenses. This is source-available software with a noncommercial restriction, not an OSI open-source license.

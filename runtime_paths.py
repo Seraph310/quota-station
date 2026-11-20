@@ -31,7 +31,7 @@ def user_data_root():
 
 
 def native_source_keys():
-    return [0, 1, 2] if sys.platform == 'win32' else [0]
+    return [0, 1, 2, 3] if sys.platform == 'win32' else [0]
 
 
 def cli_environment():

@@ -57,6 +57,23 @@ class MagpieTests(unittest.TestCase):
                 self.assertIn({'label': '赠送余额', 'value': '¥4.35'}, snapshot['details'])
         self.assertEqual(number_text(magpie.normalize([account(windows=[], balance='$-1.10')])[0]['snapshot']), '$-1.10')
 
+    def test_workbuddy_uses_total_credits_instead_of_plan_or_extra_pool(self):
+        windows = [
+            {'name': 'Credits', 'remaining': 20, 'limit': 20000, 'amount': 16000, 'unit': 'credits'},
+            {'name': 'Extra credits', 'remaining': 50, 'limit': 60000, 'amount': 30000, 'unit': 'credits'},
+            {'name': 'Total credits', 'remaining': 42.5, 'limit': 80000, 'amount': 46000, 'unit': 'credits'},
+        ]
+        for order in (windows, windows[::-1], windows[1:] + windows[:1]):
+            with self.subTest(order=[w['name'] for w in order]):
+                source = magpie.normalize([account(provider='workbuddy', name='WorkBuddy', windows=order)])[0]
+                snapshot = validate_snapshot(source['snapshot'])
+                self.assertEqual(snapshot['balance'], 34000)
+                self.assertEqual(snapshot['remaining_percent'], 42.5)
+                self.assertEqual(snapshot['unit'], 'Credits')
+                self.assertEqual(snapshot['source'], 'magpie')
+                self.assertEqual({d['label'] for d in snapshot['details']},
+                                 {'数据来源', '账号', 'Credits', '额外积分', '总积分'})
+
     def test_unknown_and_vendor_errors_do_not_become_zero_or_leak_credentials(self):
         for extra in ({'windows': []}, {'windows': [{'name': 'images', 'text': True, 'remaining': 100}]},
                       {'balance': 'Unknown', 'windows': []},

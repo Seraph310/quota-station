@@ -6,7 +6,7 @@
 
 **留一点余量，从容做事。**
 
-一个便签风格的 Windows / macOS 桌面小组件，把自己选中的 AI 额度放在手边。Windows 支持 **Codex、Qoder、WorkBuddy 本机直连**；macOS 支持 **Codex CLI**。两端都能读取 **Magpie 已接入的账号和 API 余额**。收起是一张小卡片或悬浮球，展开查看已选来源。
+一个便签风格的 Windows / macOS 桌面小组件，把自己选中的 AI 额度放在手边。Windows 支持 **Codex、Qoder、WorkBuddy、Antigravity 本机直连**；macOS 支持 **Codex CLI**。两端都能读取 **Magpie 已接入的账号和 API 余额**。收起是一张小卡片或悬浮球，展开查看已选来源。
 
 ![额度小站：小卡片、悬浮球与展开便签；数值为演示数据](images/overview.png)
 
@@ -50,7 +50,7 @@
 
 展开小站，点击左下角的 **显示来源**；也可以从卡片或托盘的右键菜单打开。
 
-- **本机直连**：原有的 Codex、Qoder、WorkBuddy，可分别勾选。
+- **本机直连**：Codex、Qoder、WorkBuddy、Antigravity，可分别勾选。
 - **Magpie**：自动列出它当前接入的额度来源，同一平台的不同账号独立选择。新增来源默认不勾选。
 - 点击 **一键同步 Magpie**，自动检测正在运行的程序、PATH、Windows 安装记录和常用安装目录，读取它当前的网关端口，并同步已有账号及最新额度。检测到的程序路径会保存在小站设置中。
 - **同步详情** 可查看和复制程序路径，并查看版本、连接方式和上次同步时间。同步只更新来源和额度，保留已经勾选的显示项。
@@ -118,7 +118,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -DesktopShortc
 | Codex | 已安装并通过 ChatGPT 账号登录的 Codex CLI，使用 `account/rateLimits/read`；不创建模型任务。仅有桌面 App 不一定包含可调用的 CLI。 |
 | 新版 Qoder App | 优先复用当前 Windows 用户的独立 App 登录，已适配 0.4.3。只读解密本机登录，在内存中向客户端使用的 `GET /sash/api/v2/me/usage` 查询；无需启动旧 IDE，也无需 Node.js。登录过期时打开新版 Qoder 更新登录。 |
 | 旧 Qoder 环境 | 无新版 App 配置时，支持官方 SDK 的 `getUsageInfo()`，再回退到正在运行且已登录的国际版 Qoder IDE 本地 `credit/usage`。此路径需要 Node.js。 |
-| WorkBuddy | 保持桌面客户端运行并登录。勾选此来源时，Windows 会在账号文件变化时通知小站。切号后小站清除旧积分，读取新账号菜单中的「积分余额」，等待期间显示 **—**。常规额度每五分钟刷新，取消勾选即停止监听。 |
+| WorkBuddy · Magpie | 在「显示来源」中勾选 **Magpie** 下已连接的 WorkBuddy 账号，取消本机直连的 WorkBuddy。卡片显示套餐积分和额外积分的总余额，每五分钟刷新。启动小站即可读取，WorkBuddy 客户端可以保持关闭。显示的账号以 Magpie 中所选的来源为准。 |
+| WorkBuddy · 本机直连 | 保持桌面客户端运行并登录。勾选此来源时，Windows 会在账号文件变化时通知小站。切号后小站清除旧积分，读取新账号菜单中的「积分余额」，等待期间显示 **—**。常规额度每五分钟刷新，取消勾选即停止监听。 |
+| Antigravity · 本机直连 | Windows 上读取反重力官方客户端的本机额度接口，沿用客户端已有登录。卡片分两行显示 Gemini 和 Argon 的周额度剩余比例；侧边条使用这两项中较低的值。详情保留各模型组的周额度和五小时额度。客户端运行时每五分钟刷新，关闭后保留原值和时间并标记「上次读数」，再次打开后可继续刷新。已在桌面版 2.33.0 验证。 |
 | Magpie | “一键同步”自动检测安装位置，通过 `magpie status --json` 读取当前网关端口，再查询本机 `/v1/magpie/quotas`；网关未运行时使用检测到的 `magpie.exe quota --json`。无需再次填写 API Key；登录与账号管理仍在 Magpie 中完成。特殊安装可用 `QUOTA_MAGPIE_EXECUTABLE` 或 `QUOTA_MAGPIE_PORT` 指定。 |
 
 Magpie 接入只查询额度，不修改路由、启用状态、自动重置、通知或 Credits 消费设置。窗口同时有百分比与用量总额时优先展示可用数量；货币保持原币种，负余额如实显示。描述性“Unknown”不会被当成 100% 可用。

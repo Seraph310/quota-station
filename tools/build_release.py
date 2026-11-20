@@ -121,7 +121,7 @@ def main():
     report = json.loads(report_file.read_text('utf-8'))
     assert report['success'] and report['frozen'] and report['state_isolated']
     assert report['version'] == __version__
-    assert report['native_sources'] == ([0] if mac else [0, 1, 2])
+    assert report['native_sources'] == ([0] if mac else [0, 1, 2, 3])
     run(sys.executable, ROOT / 'tools/verify_updater_install.py', '--binary', binary,
         '--output', evidence / 'updater.json', timeout=240)
     arch = platform.machine().lower()

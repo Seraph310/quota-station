@@ -120,6 +120,8 @@ class SourcePicker(QDialog):
                     caption = ' · '.join(filter(None, (account, tr(meta.get('plan') or ''))))
                     if key in station.errors:
                         status = '暂未连接' if not meta.get('available', True) else '额度暂不可用'
+                        if station.showing_cached_quota(key):
+                            status = '上次读数'
                         caption = (caption + ' · ' if caption else '') + tr(status)
                         checkbox.setToolTip(tr(station.errors[key]))
                     if caption:

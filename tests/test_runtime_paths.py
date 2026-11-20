@@ -34,7 +34,7 @@ class RuntimePathTests(unittest.TestCase):
             self.assertEqual(paths.data_root(), self.root / 'Library/Application Support/QuotaStation')
             self.assertEqual(paths.native_source_keys(), [0])
         with patch.object(paths.sys, 'platform', 'win32'):
-            self.assertEqual(paths.native_source_keys(), [0, 1, 2])
+            self.assertEqual(paths.native_source_keys(), [0, 1, 2, 3])
 
     def test_explicit_data_directory_must_be_absolute(self):
         with patch.dict(os.environ, {'QUOTA_STATION_DATA_DIR': str(self.root / 'custom')}):

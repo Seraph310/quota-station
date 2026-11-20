@@ -69,7 +69,8 @@ def _balance(text):
 
 def _window_name(name):
     return {'7 days': '本周', 'Weekly': '本周', '5 hours': '5 小时',
-            'Credits': 'Credits', 'Image generation': '图片生成'}.get(name, name)
+            'Credits': 'Credits', 'Extra credits': '额外积分',
+            'Total credits': '总积分', 'Image generation': '图片生成'}.get(name, name)
 
 
 def normalize(payload, *, now=None):
@@ -156,7 +157,8 @@ def normalize(payload, *, now=None):
                                 'value': str(split.get('text') or '—')[:120]})
         if candidates:
             _, snapshot = min(candidates, key=lambda pair:
-                (pair[0] not in ('7 days', 'Weekly', '总积分', 'Total'), pair[0] in ('Image generation',)))
+                (pair[0] not in ('7 days', 'Weekly', '总积分', 'Total', 'Total credits'),
+                 pair[0] in ('Image generation',)))
         elif balance:
             snapshot = {'balance': balance[0], 'unit': balance[1], 'subtitle': '剩余余额',
                         'reset_at': None, 'kind': 'balance'}

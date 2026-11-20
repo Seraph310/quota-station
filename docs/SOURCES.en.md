@@ -22,11 +22,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -WithQoderSdk
 
 The available total includes the usable plan, add-ons, organization allocation assigned to the user, and dedicated packages. Expired, suspended, and unavailable packages are excluded. Dedicated-package restrictions still apply in Qoder. Enterprise-only usage pages and nonstandard service domains are not fully supported.
 
-## WorkBuddy · Windows
+## WorkBuddy
+
+For quotas at startup, select the WorkBuddy account under **Magpie** in **Sources** and deselect its native entry. Magpie must already be connected to that account. The card uses **Total credits**, including the remaining plan and extra credits, and refreshes every five minutes. WorkBuddy desktop can stay closed. Account selection follows the account chosen in Magpie.
+
+### Native client · Windows
 
 Keep WorkBuddy desktop running and signed in. While this source is selected, Windows notifies Quota Station when the active account file changes. Switching accounts clears the previous balance and starts a fresh lookup. The card shows **—** until the new balance arrives. The regular balance refresh runs every five minutes. Deselecting WorkBuddy stops the file watch.
 
 Quota Station uses Windows accessibility to open the account menu, refresh **Credits Balance**, and close a menu it opened. An already open account menu stays open. If WorkBuddy is closed or its menu is unavailable, the card can show the last confirmed balance for the same account with its original timestamp.
+
+## Antigravity desktop · Windows
+
+Select **Antigravity** under native sources. Quota Station reads model-group quotas from the official app's local service, using its existing sign-in. The card shows **Gemini weekly** and **Argon weekly** remaining percentages on separate rows. The edge bar uses the lower of these two weekly quotas. Details still list the weekly and five-hour windows of each group.
+
+While Antigravity is running, quotas refresh every five minutes. After it closes, Quota Station keeps the previous value and timestamp, marked **Last reading**. Opening Antigravity allows the next refresh to update it. This integration was verified with Antigravity desktop 2.33.0.
 
 ## Magpie · Windows and macOS
 

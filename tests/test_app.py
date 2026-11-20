@@ -98,6 +98,75 @@ class AppInteractionTests(unittest.TestCase):
         self.qt.processEvents()
         self.station.mini.setFocus()
 
+    def test_antigravity_closed_retains_timestamp_and_marks_cached_reading(self):
+        station = self.station
+        station.sources[3] = {'id': 3, 'name': 'Antigravity', 'origin': '本机直连',
+                              'color': '#5677ad', 'account': '', 'plan': '', 'available': True}
+        station.set_source_visible(3, True)
+        item = snapshot(3, 60)
+        item.update(source='antigravity', unit='%', updated_at=time.time() - 3600,
+                    weekly_quotas=[{'model': 'Gemini', 'balance': 60}, {'model': 'Argon', 'balance': 100}])
+        item = quota_app.validate_snapshot(item)
+        station.receive(3, item, '')
+        station.receive(3, None, quota_app.antigravity.OFFLINE_MESSAGE)
+        row = station.rows[station.row_keys.index(3)]
+        self.assertEqual(row[1].text(), '60%')
+        self.assertTrue(row[1].isHidden())
+        self.assertEqual([value.text() for _, value in row[0].weekly.readings], ['60%', '100%'])
+        self.assertEqual(row[2].text(), '上次读数')
+        self.assertEqual(row[3].text(), '1 小时前')
+        self.assertEqual(station.snapshots[3]['updated_at'], item['updated_at'])
+        with patch.object(quota_app, 'native_source_keys', return_value=[0, 1, 2, 3]):
+            restored = quota_app.Station(offline=True)
+        try:
+            self.assertIn(3, restored.visible_sources)
+            self.assertEqual(restored.snapshots[3], item)
+        finally:
+            restored.poll.stop()
+            restored.clock.stop()
+            restored.tray.hide()
+            restored.close()
+            restored.deleteLater()
+        station.receive(3, None, quota_app.antigravity.NO_ACCOUNT_MESSAGE)
+        self.assertNotIn(3, station.snapshots)
+
+    def test_weekly_pair_fits_both_shapes_and_languages_and_switches_back(self):
+        from tests.test_antigravity import quotas
+        station = self.station
+        station.sources[3] = {'id': 3, 'name': 'Antigravity', 'origin': '本机直连',
+                              'color': '#5677ad', 'account': '', 'plan': '', 'available': True}
+        station.set_source_visible(3, True)
+        station.receive(3, quota_app.antigravity.normalize(quotas(), 'demo@example.test'), '')
+        station.active = station.visible_sources.index(3)
+        for lang in ('zh-CN', 'en'):
+            station.set_language(lang)
+            for shape in ('card', 'ball'):
+                station.set_shape(shape)
+                for scale in (0.8, 1.0, 2.0):
+                    station.set_mini_scale(scale)
+                    self.qt.processEvents()
+                    with self.subTest(lang=lang, shape=shape, scale=scale):
+                        self.assertTrue(station.mini.value.isHidden())
+                        self.assertTrue(station.mini.weekly.isVisible())
+                        self.assertEqual([v.text() for _, v in station.mini.weekly.readings], ['42%', '80%'])
+                        for name, value in station.mini.weekly.readings:
+                            for field in (name, value):
+                                self.assertGreaterEqual(field.width(), field.fontMetrics().horizontalAdvance(field.text()))
+                                self.assertGreaterEqual(field.height(), field.fontMetrics().height())
+                        parts = (station.mini.name, station.mini.weekly, station.mini.unit, station.mini.dots)
+                        for above, below in zip(parts, parts[1:]):
+                            self.assertLess(above.geometry().bottom(), below.geometry().top())
+        station.set_language('zh-CN')
+        station.expand()
+        self.qt.processEvents()
+        self.assertGreaterEqual(station.row_scroll.height(), station.row_scroll.widget().sizeHint().height())
+        self.assertLess(station.row_scroll.geometry().bottom(), station.last_updated.geometry().top())
+        station.collapse()
+        station.active = 0
+        station.render()
+        self.assertTrue(station.mini.weekly.isHidden())
+        self.assertFalse(station.mini.value.isHidden())
+
     def tearDown(self):
         self.station.mini.timer.stop()
         self.station.poll.stop()

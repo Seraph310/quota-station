@@ -21,7 +21,7 @@ datas.append((str(root / 'updater_shortcut.ps1'), '.'))
 analysis = Analysis(
     [str(root / 'launcher.py')], pathex=[str(root)], binaries=[], datas=datas,
     hiddenimports=windows_imports + ['providers.' + name for name in
-                   ('codex_provider', 'qoder_provider', 'workbuddy_provider', 'magpie_provider')],
+                   ('codex_provider', 'qoder_provider', 'workbuddy_provider', 'antigravity_provider', 'magpie_provider')],
     hookspath=[], hooksconfig={}, runtime_hooks=[],
     excludes=['tkinter', 'pytest', 'tests'], noarchive=False,
 )

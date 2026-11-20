@@ -134,6 +134,7 @@ EN = {
     '额度': 'Quota',
     '暂无数据': 'No data',
     '总积分': 'Total credits',
+    '额外积分': 'Extra credits',
     '图片生成': 'Image generation',
     '余额': 'Balance',
     '赠送余额': 'Promotional balance',
@@ -251,10 +252,23 @@ EN = {
     'WorkBuddy 账号已切换，正在重新读取': 'WorkBuddy switched accounts. Checking the new balance.',
     '等待 WorkBuddy 客户端显示当前账号': 'Waiting for the WorkBuddy client to show the current account.',
     'WorkBuddy 客户端积分余额': 'Credit balance shown in the WorkBuddy client',
+    'Antigravity 官方客户端': 'Official Antigravity app',
+    'Antigravity 已关闭，等待客户端更新额度': 'Antigravity is closed. Waiting for the app to update quotas.',
+    '请先在 Antigravity 官方客户端登录': 'Sign in to the official Antigravity app first.',
+    'Antigravity 账号已切换，等待新账号额度': 'Antigravity switched accounts. Waiting for the new quotas.',
+    'Antigravity 本机查询地址发生跳转': 'The local Antigravity endpoint redirected unexpectedly.',
+    'Antigravity 额度响应过大': 'The Antigravity quota response is too large.',
+    'Antigravity 额度响应格式异常': 'Invalid Antigravity quota response.',
+    'Antigravity 暂未返回可确认的额度': 'Antigravity has not returned confirmed quotas yet.',
+    'Antigravity 本机额度暂时无法读取，请稍后刷新': 'Antigravity quotas could not be read. Refresh later.',
+    '上次读数': 'Last reading',
+    '部分来源显示上次读数': 'Some sources show their last reading',
 }
 
 # These also render canonical Chinese snapshots/errors cached by pre-i18n apps.
 TEMPLATES = {
+    '{group} · {window}剩余': '{group} · {window} remaining',
+    '{group} · {window}': '{group} · {window}',
     '{count} 分钟前': '{count} min ago',
     '{count} 小时前': '{count} hr ago',
     '{time} 重置': 'Resets {time}',
