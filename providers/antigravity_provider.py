@@ -23,7 +23,7 @@ WEEKLY_MODELS = ('Gemini', 'Argon')
 
 
 def weekly_quotas(snapshot):
-    """Return the two selected weekly quotas, including pre-structured caches."""
+    """Return weekly pools actually reported, including pre-structured caches."""
     if not snapshot or snapshot.get('source') != 'antigravity':
         return []
     stored = snapshot.get('weekly_quotas')
@@ -32,6 +32,11 @@ def weekly_quotas(snapshot):
         for item in stored:
             if isinstance(item, dict) and item.get('model') in WEEKLY_MODELS:
                 values[item['model']] = item.get('balance')
+        # v0.5.3 appended a missing Argon placeholder even after the pools merged.
+        # Remove only that placeholder when the original details confirm its absence.
+        labels = {item.get('label') for item in snapshot.get('details', []) if isinstance(item, dict)}
+        if values.get('Argon') is None and 'Gemini · 本周' in labels and 'Argon · 本周' not in labels:
+            values.pop('Argon', None)
     else:
         # Older snapshots stored these exact labels and percentage strings only.
         # Preserve their timestamp; reading the cache is not a quota refresh.
@@ -40,12 +45,13 @@ def weekly_quotas(snapshot):
                 continue
             for model in WEEKLY_MODELS:
                 if detail.get('label') == f'{model} · 本周':
+                    values[model] = None
                     match = re.match(r'^剩余 (\d+(?:\.\d+)?)%(?: · |$)', str(detail.get('value', '')))
                     if match:
                         values[model] = float(match[1])
     return [{'model': model, 'balance': value if type(value) in (int, float)
              and math.isfinite(value) and 0 <= value <= 100 else None, 'unit': '%'}
-            for model in WEEKLY_MODELS for value in [values.get(model)]]
+            for model in WEEKLY_MODELS if model in values for value in [values[model]]]
 
 
 def display_snapshot(snapshot):
@@ -59,6 +65,25 @@ def display_snapshot(snapshot):
     limiting = min(known, key=lambda item: item['balance'])
     return dict(snapshot, weekly_quotas=quotas, balance=limiting['balance'],
                 remaining_percent=limiting['balance'], subtitle='本周剩余', reset_at=None)
+
+
+def gemini_windows(snapshot):
+    """Show weekly and five-hour limits of the same Gemini pool independently."""
+    weekly = next((q['balance'] for q in weekly_quotas(snapshot) if q['model'] == 'Gemini'), None)
+    short = None
+    stored = snapshot.get('quota_windows')
+    if isinstance(stored, list):
+        short = next((q.get('balance') for q in stored if isinstance(q, dict) and q.get('window') == '5h'), None)
+    else:
+        for detail in snapshot.get('details', []):
+            if isinstance(detail, dict) and detail.get('label') == 'Gemini · 5 小时':
+                match = re.match(r'^剩余 (\d+(?:\.\d+)?)%(?: · |$)', str(detail.get('value', '')))
+                if match:
+                    short = float(match[1])
+    if type(short) not in (int, float) or not math.isfinite(short) or not 0 <= short <= 100:
+        short = None
+    return [{'model': '总额度', 'balance': weekly, 'unit': '%'},
+            {'model': '5 小时', 'balance': short, 'unit': '%'}]
 
 
 def _server():
@@ -127,7 +152,7 @@ def normalize(payload, account, *, now=None):
         groups = [{'displayName': 'Antigravity', 'buckets': response['buckets']}]
     details = [{'label': '数据来源', 'value': 'Antigravity 官方客户端'},
                {'label': '账号', 'value': account}]
-    weekly = []
+    weekly, windows = [], []
     for group in groups:
         if not isinstance(group, dict):
             continue
@@ -146,6 +171,10 @@ def normalize(payload, account, *, now=None):
                     or not isinstance(fraction, (int, float)) or not math.isfinite(fraction)
                     or not 0 <= fraction <= 1):
                 details.append({'label': label, 'value': '暂不可用'})
+                if title in WEEKLY_MODELS and bucket.get('window') == 'weekly':
+                    weekly.append({'model': title, 'balance': None})
+                if title == 'Gemini' and bucket.get('window') in ('weekly', '5h'):
+                    windows.append({'window': bucket['window'], 'balance': None})
                 continue
             remaining = round(fraction * 100, 6)
             reset = timestamp(bucket.get('resetTime'))
@@ -155,10 +184,12 @@ def normalize(payload, account, *, now=None):
             details.append({'label': label, 'value': value})
             if title in WEEKLY_MODELS and bucket.get('window') == 'weekly':
                 weekly.append({'model': title, 'balance': remaining})
-    if not weekly:
+            if title == 'Gemini' and bucket.get('window') in ('weekly', '5h'):
+                windows.append({'window': bucket['window'], 'balance': remaining})
+    if not any(item['balance'] is not None for item in weekly):
         raise RuntimeError('Antigravity 暂未返回可确认的额度')
     snapshot = dict(name='Antigravity', source='antigravity', unit='%',
-                    weekly_quotas=weekly, details=details,
+                    weekly_quotas=weekly, quota_windows=windows, details=details,
                     account_key=hashlib.sha256(account.encode()).hexdigest(),
                     updated_at=time.time() if now is None else now)
     return display_snapshot(snapshot)

@@ -34,9 +34,11 @@ Quota Station uses Windows accessibility to open the account menu, refresh **Cre
 
 ## Antigravity desktop · Windows
 
-Select **Antigravity** under native sources. Quota Station reads model-group quotas from the official app's local service, using its existing sign-in. The card shows **Gemini weekly** and **Argon weekly** remaining percentages on separate rows. The edge bar uses the lower of these two weekly quotas. Details still list the weekly and five-hour windows of each group.
+Select **Antigravity** under native sources. Quota Station reads model-group quotas from the official app's local service, using its existing sign-in. When Gemini and Argon share a pool, the card shows one **Gemini weekly** remaining percentage. Accounts that still report separate pools keep separate rows; the edge bar uses the lower weekly reading. Claude/GPT quotas remain separate in details, along with each group's five-hour limit. No percentages are added together. Google's [quota documentation](https://antigravity.google/docs/plans) describes the shared Gemini quota.
 
-While Antigravity is running, quotas refresh every five minutes. After it closes, Quota Station keeps the previous value and timestamp, marked **Last reading**. Opening Antigravity allows the next refresh to update it. This integration was verified with Antigravity desktop 2.33.0.
+While Antigravity is running, quotas refresh every five minutes. After it closes, Quota Station keeps the previous value and timestamp, marked **Last reading**. Opening Antigravity allows the next refresh to update it. Separate pools were verified with Antigravity desktop 2.33.0; the shared Gemini pool was verified with 2.34.0.
+
+For the shared Gemini pool, right-click and open **Antigravity** to choose **Total only** or **Total + 5 hours**. Total means the shared weekly quota, including Argon. The default uses the same single-percentage layout as Codex; the two-row view shows the weekly and five-hour limits independently. Your choice is saved, and switching views does not request another quota refresh. The edge bar continues to show the weekly quota.
 
 ## Magpie · Windows and macOS
 

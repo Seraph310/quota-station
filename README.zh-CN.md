@@ -58,7 +58,7 @@ Mac 包在 macOS 15 上构建和验证。Windows 包未做商业代码签名，M
 | Qoder | ✓ | — | 登录 Qoder App；同时保留旧 SDK / IDE 回退路径 |
 | WorkBuddy · Magpie | ✓ | ✓ | 已在 Magpie 连接账号，显示剩余总积分；WorkBuddy 客户端可以保持关闭 |
 | WorkBuddy · 本机直连 | ✓ | — | WorkBuddy 桌面端已打开并登录，切换账号后自动跟随 |
-| Antigravity · 本机直连 | ✓ | — | 官方桌面端已打开并登录，分别显示 Gemini 和 Argon 周额度；关闭后保留上次读数 |
+| Antigravity · 本机直连 | ✓ | — | 官方桌面端已打开并登录，显示 Gemini 共用周额度（含 Argon）；关闭后保留上次读数 |
 | Magpie 账号与 API 余额 | ✓ | ✓ | 本机安装 Magpie，已在其中连接账号 |
 
 Magpie 来源取决于它已经接入的账号，不代表小站直接适配了所有上游平台。Qoder、WorkBuddy、Antigravity 的本机直连目前仅支持 Windows。客户端接口可能变化，额度以各平台自身页面为准。连接方式详见[完整中文指南](docs/GUIDE.zh-CN.md#额度来源与连接条件)。

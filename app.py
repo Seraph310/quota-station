@@ -105,7 +105,7 @@ def label(text='', size=12, color=TEXT, bold=False):
 
 
 class WeeklyQuotas(QWidget):
-    """Two aligned weekly readings, kept separate at every card size."""
+    """Two aligned quota readings, kept separate at every card size."""
     def __init__(self):
         super().__init__()
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
@@ -128,6 +128,7 @@ class WeeklyQuotas(QWidget):
     def sync(self, quotas, scale=1.0, compact=False):
         self.setVisible(bool(quotas))
         for (name, value), item in zip(self.readings, quotas):
+            name.setText(tr(item['model']))
             name.setStyleSheet(f'color:{MUTED};font-size:{round((11 if compact else 13) * scale)}px;background:transparent;border:0;')
             value.setStyleSheet(f'color:{TEXT};font-size:{round((15 if compact else 18) * scale)}px;font-weight:600;background:transparent;border:0;')
             value.setText(number_text(item))
@@ -403,6 +404,9 @@ class Station(QWidget):
         if not isinstance(settings, dict):
             settings = {}
         self.language = i18n.set_language(settings.get('language', 'auto'))
+        self.antigravity_display = settings.get('antigravity_display', 'weekly')
+        if self.antigravity_display not in ('weekly', 'weekly_5h'):
+            self.antigravity_display = 'weekly'
         native_keys = native_source_keys()
         self.sources = {i: {'id': i, 'name': NAMES[i], 'origin': '本机直连', 'color': COLORS[i],
                             'account': '', 'plan': '', 'available': True}
@@ -494,6 +498,16 @@ class Station(QWidget):
         self.menu_action('展开全部额度', self.expand)
         self.menu_action('显示来源…', self.show_sources)
         self.menu_action('立即刷新', self.refresh)
+        self.antigravity_menu = self.menu.addMenu('Antigravity')
+        self.antigravity_display_group = QActionGroup(self)
+        self.antigravity_actions = {}
+        for mode, caption in [('weekly', '只显示总额度'), ('weekly_5h', '总额度 + 5 小时')]:
+            action = self.antigravity_menu.addAction(tr(caption))
+            action.setCheckable(True)
+            action.triggered.connect(lambda _checked=False, selected=mode: self.set_antigravity_display(selected))
+            self.antigravity_display_group.addAction(action)
+            self.antigravity_actions[mode] = action
+            self.menu_text.append((action, caption))
         self.update_action = self.menu_action('检查更新…')
         self.updater = UpdateController(self, self.update_action)
         self.update_action.triggered.connect(self.updater.show)
@@ -718,47 +732,72 @@ class Station(QWidget):
         return (self.errors.get(key) == antigravity.OFFLINE_MESSAGE
                 and self.snapshots.get(key, {}).get('source') == 'antigravity')
 
+    def quota_readings(self, snapshot):
+        weekly = antigravity.weekly_quotas(snapshot)
+        if self.antigravity_display == 'weekly_5h' and len(weekly) == 1 and weekly[0]['model'] == 'Gemini':
+            return antigravity.gemini_windows(snapshot)
+        return weekly
+
+    def set_antigravity_display(self, mode):
+        if mode not in ('weekly', 'weekly_5h'):
+            return
+        self.mini.timer.stop()
+        self.mini.page_turn.finish()
+        self.antigravity_display = mode
+        self.render()
+        self.layout().activate()
+        self.clamp_position()
+        self.save_settings()
+
     def render(self):
         key = self.active_key
         data = self.snapshots.get(key)
-        weekly = antigravity.weekly_quotas(data)
+        weekly = self.quota_readings(data)
+        paired = len(weekly) > 1
         name, color = self.source_name(key), self.source_color(key)
         scale = self.mini_scale
         px = lambda value: max(1, round(value * scale))
         radius = px(124) // 2 if self.shape == 'ball' else px(29)
         self.mini.setFixedSize(px(124 if self.shape == 'ball' else 138), px(124 if self.shape == 'ball' else 116))
-        self.mini.layout().setContentsMargins(px(12 if weekly else 8), px(8 if weekly else 11), px(12 if weekly else 8), px(8 if weekly else 10))
-        self.mini.layout().setSpacing(px(1 if weekly else 3))
+        self.mini.layout().setContentsMargins(px(12 if paired else 8), px(8 if paired else 11), px(12 if paired else 8), px(8 if paired else 10))
+        self.mini.layout().setSpacing(px(1 if paired else 3))
         self.mini.resize_grip.setVisible(self.shape == 'card')
         self.mini.layout_resize_grip()
         self.mini.setStyleSheet(f'QPushButton{{background:{PAPER};border:1px solid {LINE};border-radius:{radius}px;}} QPushButton:focus{{border-color:#b1c9b8;}}')
         self.mini.name.setText('● ' + name)
         self.mini.name.setStyleSheet(f'color:{color};font-size:{px(12)}px;border:0;background:transparent;')
         self.mini.value.setText(number_text(data))
-        self.mini.value.setVisible(not weekly)
-        self.mini.weekly.sync(weekly, scale, compact=True)
-        self.mini.value.setStyleSheet(f'color:{TEXT};font-size:{px(25 if len(number_text(data)) > 5 else 29)}px;font-weight:600;border:0;background:transparent;')
+        self.mini.value.setVisible(not paired)
+        self.mini.weekly.sync(weekly if paired else [], scale, compact=True)
+        value_size = 25 if len(number_text(data)) > 5 else 29
+        self.mini.value.setStyleSheet(f'color:{TEXT};font-size:{px(value_size)}px;font-weight:600;border:0;background:transparent;')
         unit = tr(data.get('subtitle', '剩余额度') if data else ('正在连接' if key in self.busy else '待连接'))
+        if weekly and weekly[0]['model'] == '总额度':
+            unit = ''
         self.mini.unit.setText(unit if key not in self.errors else tr('上次余额' if data else '待连接'))
         if self.showing_cached_quota(key):
             self.mini.unit.setText(tr('上次读数'))
         if key is None:
             self.mini.unit.setText(tr('选择显示来源'))
+        self.mini.unit.setVisible(bool(self.mini.unit.text()))
         self.mini.unit.setStyleSheet(f'color:{MUTED};font-size:{px(11)}px;border:0;background:transparent;')
         count = len(self.visible_sources)
         self.mini.dots.setText(' '.join('●' if i == self.active else '·' for i in range(count)) if count <= 6 else f'{self.active + 1} / {count}')
         self.mini.dots.setStyleSheet(f'color:{color};font-size:{px(11)}px;border:0;background:transparent;')
         click_hint = tr('左侧上一页 · 右侧下一页' if self.shape == 'card' else '单击切换')
-        reading = ' · '.join(f'{item["model"]} {number_text(item)}' for item in weekly) if weekly else number_text(data)
+        reading = ' · '.join(f'{tr(item["model"])} {number_text(item)}' for item in weekly) if weekly else number_text(data)
         self.mini.setAccessibleName(tr('{name} {unit} {value}，{hint}，双击展开', name=name, unit=unit, value=reading, hint=click_hint))
         self.mini.setToolTip(self.details_text(key) + '\n\n' + click_hint + tr(' · 双击展开\n拖动调整位置 · 右键菜单 · Enter 展开 · 左右键切换'))
         for i, (row, value, left, right, progress) in zip(self.row_keys, self.rows):
             item = self.snapshots.get(i)
-            weekly = antigravity.weekly_quotas(item)
-            row.weekly.sync(weekly)
+            weekly = self.quota_readings(item)
+            paired = len(weekly) > 1
+            row.weekly.sync(weekly if paired else [])
             value.setText(number_text(item))
-            value.setVisible(not weekly)
+            value.setVisible(not paired)
             left.setText(tr(item.get('subtitle', '剩余额度') if item else ('正在连接' if i in self.busy else '待连接')))
+            if weekly and weekly[0]['model'] == '总额度':
+                left.setText('')
             if i in self.errors:
                 if self.showing_cached_quota(i):
                     left.setText(tr('上次读数'))
@@ -773,8 +812,9 @@ class Station(QWidget):
                 right.setText(tr('{time} 重置', time=time.strftime('%m-%d %H:%M', time.localtime(reset))) if reset else age_text(item.get('updated_at')))
             else:
                 right.setText('')
+            left.setVisible(bool(left.text()))
             percent = item.get('remaining_percent', item.get('balance') if item.get('unit') == '%' else None) if item else None
-            progress.setVisible(not weekly and isinstance(percent, (int, float)))
+            progress.setVisible(not paired and isinstance(percent, (int, float)))
             if isinstance(percent, (int, float)):
                 progress.setValue(round(percent * 10))
             row.setToolTip(self.details_text(i) + tr('\n右键查看详情'))
@@ -787,6 +827,11 @@ class Station(QWidget):
                                      '每 5 分钟自动更新' if count else '尚未选择来源'))
         for shape_key, button in self.shape_buttons.items():
             button.setChecked(shape_key == self.shape)
+        self.antigravity_menu.menuAction().setVisible(3 in self.visible_sources)
+        pools = antigravity.weekly_quotas(self.snapshots.get(3))
+        self.antigravity_menu.menuAction().setEnabled(not pools or (len(pools) == 1 and pools[0]['model'] == 'Gemini'))
+        for mode, action in self.antigravity_actions.items():
+            action.setChecked(mode == self.antigravity_display)
         self.tray.setToolTip((tr('额度小站') + '\n' + '\n'.join(f'{self.source_name(key)}  {number_text(self.snapshots.get(key))}' for key in self.visible_sources))[:120])
         self.fit_rows()
         if self.source_picker:
@@ -1130,7 +1175,10 @@ class Station(QWidget):
 
     def save_settings(self):
         try:
-            atomic_json(STATE / 'settings.json', {'shape': self.shape, 'mini_scale': self.mini_scale, 'topmost': self.topmost, 'x': self.x(), 'y': self.y(), 'visible_sources': self.visible_sources, 'magpie_connection': self.magpie_connection, 'edge_dock': self.docking.settings(), 'language': self.language})
+            settings = {'shape': self.shape, 'mini_scale': self.mini_scale, 'topmost': self.topmost, 'x': self.x(), 'y': self.y(), 'visible_sources': self.visible_sources, 'magpie_connection': self.magpie_connection, 'edge_dock': self.docking.settings(), 'language': self.language}
+            if self.antigravity_display != 'weekly':
+                settings['antigravity_display'] = self.antigravity_display
+            atomic_json(STATE / 'settings.json', settings)
             return True
         except OSError:
             return False

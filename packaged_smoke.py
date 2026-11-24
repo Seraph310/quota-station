@@ -95,12 +95,28 @@ def run(application, destination):
                 application.processEvents()
                 assert station.mini.unit.text() == '上次读数'
                 assert station.grab().save(str(destination / 'antigravity-weekly-cached.png'))
+                payload['response']['groups'].pop()
+                payload['response']['groups'][0]['buckets'].append({'window': '5h', 'remainingFraction': .7})
+                station.receive(3, antigravity.normalize(payload, 'demo@example.test'), '')
+                station_app.Station.render(station)
+                application.processEvents()
+                assert station.mini.weekly.isHidden() and station.mini.value.isVisible()
+                assert station.mini.value.text() == '42%' and station.mini.unit.text() == '本周剩余'
+                assert station.grab().save(str(destination / 'antigravity-shared-weekly.png'))
+                station.antigravity_actions['weekly_5h'].trigger()
+                station_app.Station.render(station)
+                application.processEvents()
+                assert [(n.text(), v.text()) for n, v in station.mini.weekly.readings] == [('总额度', '42%'), ('5 小时', '70%')]
+                assert station.mini.weekly.isVisible() and station.mini.value.isHidden()
+                assert station.grab().save(str(destination / 'antigravity-weekly-and-5h.png'))
             report = {'success': True, 'version': __version__, 'frozen': bool(getattr(sys, 'frozen', False)),
                       'platform': sys.platform, 'architecture': platform.machine(),
                       'native_sources': station_app.native_source_keys(), 'state_isolated': True,
                       'provider_imports': modules, 'visible_sources': len(station.visible_sources),
                       'edge_docking': ['left', 'right'], 'languages': ['zh-CN', 'en'],
-                      'live_language_switch': True, 'antigravity_weekly_pair': 3 in station.sources}
+                      'live_language_switch': True, 'antigravity_weekly_pair': 3 in station.sources,
+                      'antigravity_shared_weekly': 3 in station.sources,
+                      'antigravity_display_switch': 3 in station.sources}
         finally:
             if station.source_picker:
                 station.source_picker.close()

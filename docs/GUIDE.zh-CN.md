@@ -120,8 +120,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -DesktopShortc
 | 旧 Qoder 环境 | 无新版 App 配置时，支持官方 SDK 的 `getUsageInfo()`，再回退到正在运行且已登录的国际版 Qoder IDE 本地 `credit/usage`。此路径需要 Node.js。 |
 | WorkBuddy · Magpie | 在「显示来源」中勾选 **Magpie** 下已连接的 WorkBuddy 账号，取消本机直连的 WorkBuddy。卡片显示套餐积分和额外积分的总余额，每五分钟刷新。启动小站即可读取，WorkBuddy 客户端可以保持关闭。显示的账号以 Magpie 中所选的来源为准。 |
 | WorkBuddy · 本机直连 | 保持桌面客户端运行并登录。勾选此来源时，Windows 会在账号文件变化时通知小站。切号后小站清除旧积分，读取新账号菜单中的「积分余额」，等待期间显示 **—**。常规额度每五分钟刷新，取消勾选即停止监听。 |
-| Antigravity · 本机直连 | Windows 上读取反重力官方客户端的本机额度接口，沿用客户端已有登录。卡片分两行显示 Gemini 和 Argon 的周额度剩余比例；侧边条使用这两项中较低的值。详情保留各模型组的周额度和五小时额度。客户端运行时每五分钟刷新，关闭后保留原值和时间并标记「上次读数」，再次打开后可继续刷新。已在桌面版 2.33.0 验证。 |
+| Antigravity · 本机直连 | Windows 上读取反重力官方客户端的本机额度接口，沿用客户端已有登录。Gemini 与 Argon 共用额度时，卡片采用与 Codex 相同的单百分比布局，显示「本周剩余」；仍分开计额的账号保留两行，侧边条取较低值。Claude/GPT 仍是独立额度，保留在详情中，与各组五小时额度分别列出，不相加。客户端运行时每五分钟刷新，关闭后保留原值和时间并标记「上次读数」。已在桌面版 2.33.0 验证独立额度、2.34.0 验证共用额度。 |
 | Magpie | “一键同步”自动检测安装位置，通过 `magpie status --json` 读取当前网关端口，再查询本机 `/v1/magpie/quotas`；网关未运行时使用检测到的 `magpie.exe quota --json`。无需再次填写 API Key；登录与账号管理仍在 Magpie 中完成。特殊安装可用 `QUOTA_MAGPIE_EXECUTABLE` 或 `QUOTA_MAGPIE_PORT` 指定。 |
+
+Antigravity 共用额度可在右键菜单 **Antigravity → 只显示总额度 / 总额度 + 5 小时** 中切换。「总额度」指 Gemini 与 Argon 共用的本周剩余额度。默认和 Codex 一样显示一个百分比，也可分两行查看总额度与五小时剩余；选择会保存，切换不额外请求额度。侧边条继续显示周额度。
 
 Magpie 接入只查询额度，不修改路由、启用状态、自动重置、通知或 Credits 消费设置。窗口同时有百分比与用量总额时优先展示可用数量；货币保持原币种，负余额如实显示。描述性“Unknown”不会被当成 100% 可用。
 

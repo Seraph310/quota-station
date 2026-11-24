@@ -1,21 +1,23 @@
 ## 简体中文
 
-**WorkBuddy 可以通过 Magpie 显示积分总余额。** 在「显示来源」中勾选 **Magpie** 下已连接的 WorkBuddy 账号，取消本机直连的 WorkBuddy。启动小站即可读取，每五分钟刷新，WorkBuddy 客户端可以保持关闭。
+**适配 Antigravity 合并后的 Gemini 周额度。** 官方把 Argon 纳入 Gemini 共用额度后，小站使用与 Codex 相同的单百分比卡片，显示「本周剩余」，不再保留多余的 Argon 空行。
 
-- 修正 WorkBuddy 余额选择，使用包含套餐积分和额外积分的 `Total credits`。
-- 详情保留各积分包及总余额，中文界面显示「额外积分」和「总积分」。
-- Windows 新增 Antigravity 本机来源，卡片分别显示 Gemini 和 Argon 周额度，详情保留各模型组额度。客户端关闭时标记「上次读数」并保留原时间。
-- 调整双额度卡片字号和展开面板行高，兼容中英文及卡片缩放。
+- 按官方客户端实际返回的额度分组显示；仍分开计额的账号继续显示两项。
+- 右键菜单新增 **Antigravity → 只显示总额度 / 总额度 + 5 小时**。默认单百分比，也可分两行显示共用周额度和五小时额度，选择会保存。
+- 双行模式仅保留两项额度和百分比，移除重复的「剩余额度」说明。
+- Claude/GPT 和五小时额度保留在详情中，各项独立，不相加。
+- 保留中英文切换和原有刷新频率；关闭客户端后保留上次读数及原时间。
 
-显示的账号以 Magpie 中所选的来源为准。已有版本可以通过右键菜单中的 **检查更新…** 升级。
+Antigravity 本机直连目前仅支持 Windows。合并额度已在官方桌面版 2.34.0 验证。
 
 ## English
 
-**WorkBuddy balances are available through Magpie.** In **Sources**, select the connected WorkBuddy account under **Magpie** and deselect its native entry. Quota Station reads the balance on startup and refreshes every five minutes. WorkBuddy desktop can stay closed.
+**Support Antigravity's shared Gemini weekly quota.** When Argon is included in the Gemini pool, the card uses the same single-percentage layout as Codex, labeled **Weekly remaining**, and removes the obsolete empty Argon row.
 
-- Fix WorkBuddy balance selection to use `Total credits`, which includes remaining plan and extra credits.
-- Keep each credit pool in the details, with translated labels for extra and total credits.
-- Add a native Antigravity source on Windows. The card shows Gemini and Argon weekly quotas separately; details retain all model groups. When the app closes, show **Last reading** with the original timestamp.
-- Refine the paired quota font size and expanded row spacing across both languages and card sizes.
+- Follow the pools reported by the official client; accounts with separate quotas keep both readings.
+- Choose **Antigravity → Total only / Total + 5 hours** in the context menu. The default is a single weekly percentage; the optional two-row view shows weekly and five-hour quotas separately. The choice is saved.
+- Keep the two-row view compact by removing the redundant remaining-quota caption.
+- Keep Claude/GPT and five-hour quotas separate in details, without adding percentages together.
+- Preserve both languages, the refresh interval, and the original timestamp for cached readings.
 
-The displayed account follows the source selected in Magpie. Existing installations can upgrade through **Check for updates…** in the context menu.
+Native Antigravity integration remains Windows-only. The shared pool was verified with official desktop version 2.34.0.

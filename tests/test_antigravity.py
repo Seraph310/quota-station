@@ -23,7 +23,48 @@ def quotas(fraction=0.42):
     ]}}
 
 
+def shared_quotas(fraction=0.42):
+    data = quotas(fraction)
+    data['response']['groups'].pop()
+    data['response']['groups'][0]['description'] = 'Models within this group: Gemini 4 Neon, Gemini 4 Argon'
+    data['response']['groups'][0]['buckets'][0]['bucketId'] = 'gemini-weekly'
+    return data
+
+
 class AntigravityTests(unittest.TestCase):
+    def test_gemini_windows_keep_weekly_and_five_hour_values_separate(self):
+        result = provider.normalize(shared_quotas(.58), 'one@example.test')
+        self.assertEqual([q['balance'] for q in provider.gemini_windows(result)], [58, 2])
+        self.assertEqual(result['balance'], 58)
+        result.pop('quota_windows')
+        self.assertEqual([q['balance'] for q in provider.gemini_windows(result)], [58, 2])
+        for fraction in (None, True, '0.5', float('nan'), -1, 2, 0):
+            data = shared_quotas(.58)
+            data['response']['groups'][0]['buckets'][1]['remainingFraction'] = fraction
+            value = provider.normalize(data, 'one@example.test')
+            self.assertEqual(provider.gemini_windows(value)[1]['balance'], 0 if type(fraction) is int and fraction == 0 else None)
+
+    def test_shared_gemini_pool_does_not_add_argon_or_claude(self):
+        for fraction in (0, .42, 1):
+            with self.subTest(fraction=fraction):
+                result = provider.normalize(shared_quotas(fraction), 'one@example.test', now=123)
+                self.assertEqual(result['weekly_quotas'], [{'model': 'Gemini', 'balance': fraction * 100, 'unit': '%'}])
+                self.assertEqual(result['balance'], fraction * 100)
+                self.assertEqual(result['subtitle'], '本周剩余')
+                self.assertEqual(result['updated_at'], 123)
+                self.assertIn('Claude/GPT · 本周', [d['label'] for d in result['details']])
+        with self.assertRaisesRegex(RuntimeError, '可确认'):
+            provider.normalize(shared_quotas(None), 'one@example.test')
+
+    def test_v053_shared_cache_removes_only_the_missing_argon_placeholder(self):
+        old = provider.normalize(shared_quotas(), 'one@example.test', now=123)
+        old['weekly_quotas'].append({'model': 'Argon', 'balance': None, 'unit': '%'})
+        result = provider.display_snapshot(old)
+        self.assertEqual([q['model'] for q in result['weekly_quotas']], ['Gemini'])
+        self.assertEqual(result['updated_at'], 123)
+        old['weekly_quotas'][1]['balance'] = 80
+        self.assertEqual(len(provider.display_snapshot(old)['weekly_quotas']), 2)
+
     def test_card_selects_gemini_and_argon_weekly_only(self):
         result = provider.normalize(quotas(), 'one@example.test', now=123)
         self.assertEqual(result['balance'], 42)

@@ -167,6 +167,96 @@ class AppInteractionTests(unittest.TestCase):
         self.assertTrue(station.mini.weekly.isHidden())
         self.assertFalse(station.mini.value.isHidden())
 
+    def test_antigravity_moves_from_separate_to_shared_pool_and_keeps_cached_value(self):
+        from tests.test_antigravity import quotas, shared_quotas
+        station = self.station
+        station.sources[3] = {'id': 3, 'name': 'Antigravity', 'origin': '本机直连',
+                              'color': '#5677ad', 'account': '', 'plan': '', 'available': True}
+        station.set_source_visible(3, True)
+        station.active = station.visible_sources.index(3)
+        station.receive(3, quota_app.antigravity.normalize(quotas(), 'demo@example.test'), '')
+        self.assertTrue(station.mini.weekly.isVisible())
+        shared = quota_app.antigravity.normalize(shared_quotas(.58), 'demo@example.test', now=time.time() - 3600)
+        station.receive(3, shared, '')
+        self.qt.processEvents()
+        self.assertTrue(station.mini.weekly.isHidden())
+        self.assertTrue(station.mini.value.isVisible())
+        self.assertEqual(station.mini.value.text(), '58%')
+        self.assertEqual(station.mini.unit.text(), '本周剩余')
+        row = station.rows[station.row_keys.index(3)]
+        self.assertTrue(row[0].weekly.isHidden())
+        self.assertEqual(row[4].value(), 580)
+        self.assertEqual(station.docking.bar.percent, 58)
+        for lang in ('en', 'zh-CN'):
+            station.set_language(lang)
+            self.assertEqual(station.mini.unit.text(), 'Weekly remaining' if lang == 'en' else '本周剩余')
+            for shape in ('card', 'ball'):
+                station.set_shape(shape)
+                for scale in (.8, 1, 2):
+                    station.set_mini_scale(scale)
+                    self.qt.processEvents()
+                    with self.subTest(lang=lang, shape=shape, scale=scale):
+                        self.assertEqual(station.mini.value.font().pixelSize(), round(29 * scale))
+                        unit = station.mini.unit
+                        self.assertGreaterEqual(unit.width(), unit.fontMetrics().horizontalAdvance(unit.text()))
+        station.receive(3, None, quota_app.antigravity.OFFLINE_MESSAGE)
+        self.assertEqual(station.mini.value.text(), '58%')
+        self.assertEqual(station.mini.unit.text(), '上次读数')
+        self.assertEqual(station.snapshots[3]['updated_at'], shared['updated_at'])
+        station.receive(3, None, quota_app.antigravity.NO_ACCOUNT_MESSAGE)
+        self.assertNotIn(3, station.snapshots)
+
+    def test_antigravity_display_menu_switches_windows_and_survives_restart(self):
+        from tests.test_antigravity import shared_quotas
+        station = self.station
+        station.sources[3] = {'id': 3, 'name': 'Antigravity', 'origin': '本机直连',
+                              'color': '#5677ad', 'account': '', 'plan': '', 'available': True}
+        station.set_source_visible(3, True)
+        station.active = station.visible_sources.index(3)
+        data = quota_app.antigravity.normalize(shared_quotas(.58), 'demo@example.test')
+        station.receive(3, data, '')
+        self.assertTrue(station.antigravity_actions['weekly'].isChecked())
+        with patch.object(station, 'refresh') as refresh:
+            station.antigravity_actions['weekly_5h'].trigger()
+            refresh.assert_not_called()
+        self.qt.processEvents()
+        self.assertTrue(station.mini.value.isHidden())
+        self.assertEqual([(n.text(), v.text()) for n, v in station.mini.weekly.readings], [('总额度', '58%'), ('5 小时', '2%')])
+        self.assertEqual(station.snapshots[3]['balance'], 58)
+        self.assertEqual(station.docking.bar.percent, 58)
+        row = station.rows[station.row_keys.index(3)]
+        self.assertEqual([v.text() for _, v in row[0].weekly.readings], ['58%', '2%'])
+        for lang in ('en', 'zh-CN'):
+            station.set_language(lang)
+            self.assertEqual(station.antigravity_actions['weekly_5h'].text(), 'Total + 5 hours' if lang == 'en' else '总额度 + 5 小时')
+            for shape in ('card', 'ball'):
+                station.set_shape(shape)
+                for scale in (.8, 1, 2):
+                    station.set_mini_scale(scale)
+                    self.qt.processEvents()
+                    for name, value in station.mini.weekly.readings:
+                        for field in (name, value):
+                            self.assertGreaterEqual(field.width(), field.fontMetrics().horizontalAdvance(field.text()))
+        self.assertEqual(quota_app.read_json(quota_app.STATE / 'settings.json', {})['antigravity_display'], 'weekly_5h')
+        with patch.object(quota_app, 'native_source_keys', return_value=[0, 1, 2, 3]):
+            restored = quota_app.Station(offline=True)
+        try:
+            self.assertEqual(restored.antigravity_display, 'weekly_5h')
+            self.assertTrue(restored.antigravity_actions['weekly_5h'].isChecked())
+        finally:
+            restored.poll.stop()
+            restored.clock.stop()
+            restored.tray.hide()
+            restored.close()
+            restored.deleteLater()
+        station.receive(3, None, quota_app.antigravity.OFFLINE_MESSAGE)
+        self.assertEqual(station.mini.unit.text(), '上次读数')
+        self.assertEqual(station.snapshots[3]['updated_at'], data['updated_at'])
+        station.antigravity_actions['weekly'].trigger()
+        self.assertFalse(station.mini.value.isHidden())
+        self.assertEqual(station.mini.value.text(), '58%')
+        self.assertNotIn('antigravity_display', quota_app.read_json(quota_app.STATE / 'settings.json', {}))
+
     def tearDown(self):
         self.station.mini.timer.stop()
         self.station.poll.stop()

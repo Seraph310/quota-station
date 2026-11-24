@@ -58,7 +58,7 @@ The Mac packages are built and tested on macOS 15. Windows packages are unsigned
 | Qoder | ✓ | — | A signed-in Qoder App; legacy SDK/IDE fallback is also available |
 | WorkBuddy via Magpie | ✓ | ✓ | WorkBuddy account already connected in Magpie. Shows total remaining credits; WorkBuddy desktop can stay closed |
 | WorkBuddy · native | ✓ | — | WorkBuddy desktop running and signed in. Follows account switches automatically |
-| Antigravity · native | ✓ | — | Official desktop app running and signed in. Shows Gemini and Argon weekly quotas; retains the last reading when closed |
+| Antigravity · native | ✓ | — | Official desktop app running and signed in. Shows the shared Gemini weekly quota, including Argon; retains the last reading when closed |
 | Magpie accounts & API balances | ✓ | ✓ | A local Magpie installation with accounts already connected |
 
 Magpie supplies the providers it has connected; Quota Station does not independently support every upstream provider. Native Qoder, WorkBuddy and Antigravity integrations are currently Windows-only. Provider interfaces can change, and the upstream account page remains the source of truth. See [connection details](docs/SOURCES.en.md).
